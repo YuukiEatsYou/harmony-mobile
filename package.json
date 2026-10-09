@@ -14,7 +14,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm run build",
-    "test": "node --test scripts/",
+    "test": "node --test scripts/*-test.mjs",
     "sync": "npm run build && cap sync android",
     "android": "npm run sync && cap open android",
     "apk:debug": "npm run sync && cd android && ./gradlew assembleDebug",
