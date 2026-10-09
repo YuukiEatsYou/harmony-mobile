@@ -1,6 +1,6 @@
 {
   "name": "harmony-mobile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Mobile client for Harmony: one app, every instance you use.",
