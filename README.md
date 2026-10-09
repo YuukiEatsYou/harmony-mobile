@@ -22,6 +22,9 @@ This repository does not vendor or reimplement Harmony. It is a small **shell**:
 - Because the client is loaded from the server, it is always current and there
   is no bundled copy to fall out of date. This is also why no CORS work is
   needed: every instance is loaded from its own origin.
+- The shell remembers the instance you were last in and reopens it on the next
+  launch, so leaving the app and coming back does not drop you at the selector.
+  A `harmony://` deep link still wins, opening the instance it names.
 
 ### Screen sharing on Android
 
