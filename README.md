@@ -22,9 +22,10 @@ This repository does not vendor or reimplement Harmony. It is a small **shell**:
 - Because the client is loaded from the server, it is always current and there
   is no bundled copy to fall out of date. This is also why no CORS work is
   needed: every instance is loaded from its own origin.
-- The shell remembers the instance you were last in and reopens it on the next
-  launch, so leaving the app and coming back does not drop you at the selector.
-  A `harmony://` deep link still wins, opening the instance it names.
+- The shell reopens the instance you were last in whenever the app is launched
+  again or its task is resumed, so leaving and coming back does not drop you at
+  the selector. Leaving the instance with the back gesture returns you to the
+  selector, and a `harmony://` deep link still opens the instance it names.
 
 ### Screen sharing on Android
 
@@ -129,7 +130,8 @@ physical device, use the machine's LAN address, e.g. `192.168.1.50:8787`.
   `InstanceWebViewActivity.kt` (the instance webview and shim injection),
   `ScreenShareService.kt` (MediaProjection capture), `ScreenShareSender.kt` (the
   shim bridge), and `app/src/main/assets/screen-share-shim.js` (the
-  `getDisplayMedia` polyfill).
+  `getDisplayMedia` polyfill). `InstanceSession.kt` remembers the last instance
+  so `MainActivity` can resume it.
 - `scripts/` — plain-Node tests.
 - `harmony/` — a local Harmony checkout to test against (git-ignored).
 

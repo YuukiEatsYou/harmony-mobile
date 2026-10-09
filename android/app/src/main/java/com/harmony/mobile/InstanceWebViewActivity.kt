@@ -103,6 +103,9 @@ class InstanceWebViewActivity : AppCompatActivity() {
             finish()
             return
         }
+        // The shell resumes this instance if the app is restarted or the task is
+        // brought back, so it does not drop the person at the server selector.
+        InstanceSession.remember(this, url)
         instanceHost = runCatching { Uri.parse(url).host }.getOrNull()
 
         webView = WebView(this)
@@ -232,7 +235,14 @@ class InstanceWebViewActivity : AppCompatActivity() {
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (webView.canGoBack()) webView.goBack() else finish()
+                    if (webView.canGoBack()) {
+                        webView.goBack()
+                    } else {
+                        // Leaving the instance on purpose: the shell should show
+                        // the selector rather than resume this instance.
+                        InstanceSession.forget(this@InstanceWebViewActivity)
+                        finish()
+                    }
                 }
             },
         )

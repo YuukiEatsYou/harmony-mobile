@@ -1,14 +1,11 @@
 import './shell.css';
-import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { mountShell } from './ui/app';
 import {
   addServer,
-  getLastServer,
   loadServers,
   removeServer,
   serverFromMeta,
-  setLastServer,
   type Server,
 } from './lib/servers';
 import { probeInstance } from './lib/meta';
@@ -23,7 +20,7 @@ let servers: Server[] = [];
 
 const shell = mountShell(root, {
   onOpen(server) {
-    void openServer(server);
+    void openInstance(server.origin);
   },
   onRemove(server) {
     void remove(server);
@@ -39,12 +36,6 @@ const shell = mountShell(root, {
 
 function render(): void {
   shell.setServers(servers);
-}
-
-/** Opens an instance, remembering it so a restart returns straight to it. */
-async function openServer(server: Server): Promise<void> {
-  await setLastServer(server.origin);
-  await openInstance(server.origin);
 }
 
 async function remove(server: Server): Promise<void> {
@@ -67,25 +58,6 @@ async function boot(): Promise<void> {
     if (shell.handleBack()) return;
     if (!canGoBack) void CapacitorApp.exitApp();
   });
-
-  await resumeLastServer();
-}
-
-/**
- * Returns to the instance the person was last on, so leaving the app and
- * coming back does not drop them at the server selector. A launch that carries
- * a `harmony://` deep link is left to the `appUrlOpen` handler above; the link
- * knows which instance it wants and should not be pre-empted. Only meaningful
- * on a device: in a browser (`npm run dev`) there is no shell to restore.
- */
-async function resumeLastServer(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  if ((await CapacitorApp.getLaunchUrl())?.url) return;
-  const origin = await getLastServer();
-  if (!origin) return;
-  const server = servers.find((candidate) => candidate.origin === origin);
-  if (!server) return;
-  await openServer(server);
 }
 
 void boot();

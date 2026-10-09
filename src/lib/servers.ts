@@ -17,7 +17,6 @@ export interface Server {
 }
 
 const SERVERS_KEY = 'harmony.servers.v1';
-const LAST_SERVER_KEY = 'harmony.lastServer.v1';
 
 export function newId(): string {
   const cryptoApi = globalThis.crypto;
@@ -69,20 +68,6 @@ export async function removeServer(id: string): Promise<Server[]> {
   const next = (await loadServers()).filter((server) => server.id !== id);
   await saveServers(next);
   return next;
-}
-
-/**
- * The instance the shell last opened, so a cold start can return straight to
- * it instead of the server selector. Stored as an origin, the instance's stable
- * identity here, so it survives re-adding a server (which mints a new id).
- */
-export async function setLastServer(origin: string): Promise<void> {
-  await Preferences.set({ key: LAST_SERVER_KEY, value: origin });
-}
-
-export async function getLastServer(): Promise<string | null> {
-  const { value } = await Preferences.get({ key: LAST_SERVER_KEY });
-  return value ? value : null;
 }
 
 function isServer(value: unknown): value is Server {
