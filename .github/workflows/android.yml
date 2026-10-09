@@ -22,6 +22,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # A source file that is not tracked (say, hidden by a gitignore rule) is
+      # simply absent from a fresh checkout, so the build emits an APK with no
+      # app classes and it crashes on launch. Fail loudly here instead.
+      - name: Verify app sources are tracked
+        run: git ls-files --error-unmatch android/app/src/main/java/com/harmony/mobile/MainActivity.java
+
       - uses: actions/setup-node@v7
         with:
           node-version: 24

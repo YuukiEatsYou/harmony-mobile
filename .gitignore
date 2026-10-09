@@ -1,6 +1,7 @@
-# Vendored Harmony source tree. We develop against it locally but do not
-# commit it; the mobile client is a separate program.
-harmony/
+# Vendored Harmony source tree, at the repository root only. The leading
+# slash matters: an unanchored harmony/ would also match the app's own
+# android/app/src/main/java/com/harmony/ package and hide its sources.
+/harmony/
 
 # Hand-off notes for the upstream Harmony maintainer: changes this client needs
 # from the server/web client. Kept local, not part of this project.
