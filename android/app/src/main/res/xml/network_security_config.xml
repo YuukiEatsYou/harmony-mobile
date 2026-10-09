@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Self-hosted Harmony instances are often reached over plain http on a LAN, and
+  the Android emulator reaches the host at 10.0.2.2. Cleartext is permitted so
+  those work both for the add-server probe and the instance client webview.
+  Tighten this to specific domains if you only ever use https.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

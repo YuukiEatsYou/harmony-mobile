@@ -1,0 +1,37 @@
+{
+  "name": "harmony-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mobile client for Harmony: one app, every instance you use.",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run build",
+    "test": "node --test scripts/",
+    "sync": "npm run build && cap sync android",
+    "android": "npm run sync && cap open android",
+    "apk:debug": "npm run sync && cd android && ./gradlew assembleDebug",
+    "assets": "npx --yes @capacitor/assets generate --android --iconBackgroundColor '#12151a' --iconBackgroundColorDark '#12151a' --splashBackgroundColor '#12151a' --splashBackgroundColorDark '#12151a'"
+  },
+  "dependencies": {
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/preferences": "8.0.1"
+  },
+  "devDependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/cli": "8.5.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  },
+  "allowScripts": {
+    "sharp@0.32.6": true
+  }
+}
