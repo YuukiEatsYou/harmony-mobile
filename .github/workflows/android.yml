@@ -1,0 +1,80 @@
+name: Build
+
+# Runs on pull requests and pushes to main, on a manual click in the Actions
+# tab, and on every v* tag. A tag also publishes a GitHub Release with the APK
+# attached. Only Android is built; this client targets Android alone for now.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+# The release job creates a release and uploads an asset.
+permissions:
+  contents: write
+
+jobs:
+  android:
+    name: Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      # JDK 21, not newer: this project's Gradle wrapper cannot parse its build
+      # scripts on JDK 25+ (it fails on Java 27 bytecode).
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npx cap sync android
+
+      # A debug APK is signed with the debug key, so it installs as-is for
+      # sideloading. A signed release build (with a keystore in secrets) is the
+      # next step if this ever goes to a store.
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+        working-directory: android
+
+      # Keep the APK as a run artifact too, so a manual (untagged) run still
+      # produces a downloadable file.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: harmony-mobile-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: android
+    # Only on a tag push; a manual run stops after building.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: apk
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: apk/*
+          generate_release_notes: true
