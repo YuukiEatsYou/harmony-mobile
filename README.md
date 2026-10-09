@@ -132,22 +132,49 @@ physical device, use the machine's LAN address, e.g. `192.168.1.50:8787`.
 
 ## Releasing
 
-`.github/workflows/android.yml` builds a debug APK on every pull request and push
-to `main`, and uploads it as a run artifact for download. Pushing a `v*` tag also
-publishes a GitHub Release with the APK attached:
+`.github/workflows/android.yml` builds a **debug** APK on every pull request and
+push to `main` and uploads it as a run artifact. Pushing a `v*` tag additionally
+builds a **signed release** APK and publishes a GitHub Release with it attached.
+
+### One-time setup: the signing key
+
+A release APK has to be signed, and the key must be kept safe: Android refuses to
+update an install with an APK signed by a different key, so losing it means you
+can never update the app in place again. Create one and store it in the
+repository's Actions secrets:
 
 ```sh
-npm version 0.2.0 --no-git-tag-version
-git commit -am "Release 0.2.0"
-git tag v0.2.0
-git push origin main v0.2.0
+keytool -genkeypair -v -keystore release.keystore -alias harmony \
+  -keyalg RSA -keysize 4096 -validity 10000
+base64 -w0 release.keystore   # copy the whole line this prints
 ```
 
-The artifact is a **debug** APK, signed with the debug key, which installs fine
-for sideloading. A signed release build (with a keystore in repository secrets)
-is the next step if this ever goes to a store. The Android `versionCode` and
-`versionName` live in `android/app/build.gradle`; bump them alongside
-`package.json` when cutting a release.
+Add these under Settings -> Secrets and variables -> Actions:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | the base64 output above |
+| `ANDROID_KEYSTORE_PASSWORD` | the store password you chose |
+| `ANDROID_KEY_ALIAS` | `harmony` |
+| `ANDROID_KEY_PASSWORD` | the key password you chose |
+
+The keystore itself is never committed (`*.keystore` and `*.jks` are ignored).
+
+### Cutting a release
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The tag is the source of truth for the version: `versionName` becomes `0.2.0`, and
+`versionCode` is derived from it as `major*10000 + minor*100 + patch`, so keep
+tags plain `vX.Y.Z`. The signed APK lands on the Releases page as
+`harmony-mobile-<version>.apk`.
+
+A release APK is signed with your key rather than the debug key, so it will not
+install over a debug build -- uninstall the debug one first. Locally,
+`./gradlew assembleRelease` works without a keystore but produces an unsigned APK.
 
 ## Upstream
 

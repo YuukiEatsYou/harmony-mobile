@@ -1,6 +1,16 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+// Release signing. In CI the keystore is written from a repository secret and its
+// passwords come from the environment (see .github/workflows/android.yml). A
+// local build without them just produces an unsigned release APK.
+def releaseKeystore = file(System.getenv("HARMONY_KEYSTORE_FILE") ?: "release.keystore")
+def hasReleaseKeystore = releaseKeystore.exists()
+
+// Overridable from the release tag as -PversionName / -PversionCode.
+def appVersionCode = (findProperty("versionCode") ?: "1").toString().toInteger()
+def appVersionName = (findProperty("versionName") ?: "1.0").toString()
+
 android {
     namespace = "com.harmony.mobile"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -8,12 +18,22 @@ android {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            release {
+                storeFile releaseKeystore
+                storePassword System.getenv("HARMONY_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("HARMONY_KEY_ALIAS")
+                keyPassword System.getenv("HARMONY_KEY_PASSWORD")
+            }
+        }
+    }
     defaultConfig {
         applicationId "com.harmony.mobile"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -23,8 +43,13 @@ android {
     }
     buildTypes {
         release {
+            // Capacitor loads its plugins reflectively, so R8 is left off rather
+            // than keeping every plugin's classes by hand.
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

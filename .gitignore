@@ -11,6 +11,10 @@ UPSTREAM_CHANGES.md
 node_modules/
 dist/
 
+# Release signing material must never be committed.
+*.keystore
+*.jks
+
 # Local build toolchain (JDK/SDK downloaded to verify the APK build).
 .toolchain/
 
