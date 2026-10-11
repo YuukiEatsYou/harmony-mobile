@@ -54,6 +54,7 @@ class InstanceWebViewActivity : AppCompatActivity() {
     private var sender: ScreenShareSender? = null
     private var callWatcher: CallWatcher? = null
     private var instanceUrl: String? = null
+    private var pendingJoin: Pair<String, String?>? = null
     private var pendingHeight = 720
     private var pendingFrameRate = 30
 
@@ -113,6 +114,12 @@ class InstanceWebViewActivity : AppCompatActivity() {
             } else {
                 setSharingForeground(false)
             }
+        }
+
+    /** The microphone permission, asked when a call starts (see [requestMicThenJoin]). */
+    private val micPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startPendingJoin() else pendingJoin = null
         }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -312,13 +319,45 @@ class InstanceWebViewActivity : AppCompatActivity() {
         val raw = message.data ?: return
         val json = runCatching { JSONObject(raw) }.getOrNull() ?: return
         when (json.optString("type")) {
-            "join" -> {
-                val url = instanceUrl ?: return
-                val name = json.optString("channelName").takeIf { it.isNotBlank() }
-                NativeVoice.startCall(this, url, json.optString("channelId"), name)
-            }
+            "join" -> requestMicThenJoin(
+                json.optString("channelId"),
+                json.optString("channelName").takeIf { it.isNotBlank() },
+            )
             "leave" -> NativeVoice.leave(this)
         }
+    }
+
+    /**
+     * A native call needs the microphone permission -- starting the microphone
+     * foreground service without it is refused. The webview no longer asks for the
+     * microphone (its voice is switched off), so ask here, and only start the call
+     * once it is held.
+     */
+    private fun requestMicThenJoin(channelId: String, channelName: String?) {
+        if (channelId.isBlank()) return
+        pendingJoin = channelId to channelName
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            startPendingJoin()
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    private fun startPendingJoin() {
+        val join = pendingJoin ?: return
+        pendingJoin = null
+        val url = instanceUrl ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            // The notification is what makes the foreground service visible; ask,
+            // but do not block the call on it.
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        NativeVoice.startCall(this, url, join.first, join.second)
     }
 
     private fun requestScreenShare(height: Int, frameRate: Int) {
