@@ -110,9 +110,10 @@ class InstanceWebViewActivity : AppCompatActivity() {
             val data = result.data
             CallDiagnostics.record(this, "native voice: share consent result=${result.resultCode}")
             if (result.resultCode == Activity.RESULT_OK && data != null) {
-                VoiceCall.session?.startScreenShare(this, data, SCREEN_HEIGHT, SCREEN_FPS)
-            } else {
-                setSharingForeground(false)
+                // The service takes the mediaProjection foreground type and starts
+                // the capture, in that order -- the type cannot be held before the
+                // consent grants the project_media appop (see CallService).
+                startService(CallService.shareStartIntent(this, data, SCREEN_HEIGHT, SCREEN_FPS))
             }
         }
 
@@ -473,9 +474,8 @@ class InstanceWebViewActivity : AppCompatActivity() {
             setSharingForeground(false)
             return
         }
-        // The service must already hold the mediaProjection foreground type before
-        // the system will hand out a projection (Android 14+).
-        setSharingForeground(true)
+        // Consent first: the mediaProjection foreground type cannot be taken until
+        // the user has consented (it grants the project_media appop).
         val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         nativeScreenConsent.launch(manager.createScreenCaptureIntent())
     }

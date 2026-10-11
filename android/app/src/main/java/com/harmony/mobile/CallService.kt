@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.IntentCompat
 
 /**
  * Owns a live call, as a foreground service.
@@ -52,6 +53,25 @@ class CallService : Service() {
                 // added before the capture starts and dropped when it ends.
                 val sharing = intent.getBooleanExtra(EXTRA_SHARING, false)
                 startAsForeground(mediaProjection = sharing)
+            }
+            ACTION_SHARE_START -> {
+                // The consent has just been given, which is what grants the
+                // project_media appop the mediaProjection foreground type needs, so
+                // take the type now and start the capture behind it. Doing this
+                // before the consent is refused.
+                startAsForeground(mediaProjection = true)
+                val data = IntentCompat.getParcelableExtra(intent, EXTRA_SCREEN_DATA, Intent::class.java)
+                val session = voice
+                if (data != null && session != null) {
+                    session.startScreenShare(
+                        this,
+                        data,
+                        intent.getIntExtra(EXTRA_HEIGHT, 720),
+                        intent.getIntExtra(EXTRA_FPS, 30),
+                    )
+                } else {
+                    CallDiagnostics.record(this, "call service: share start with no projection or call")
+                }
             }
             else -> {
                 CallDiagnostics.record(this, "call service start requested")
@@ -172,7 +192,11 @@ class CallService : Service() {
         const val ACTION_STOP = "com.harmony.mobile.STOP_CALL"
         const val ACTION_JOIN = "com.harmony.mobile.JOIN_CALL"
         const val ACTION_SHARE = "com.harmony.mobile.SHARE_STATE"
+        const val ACTION_SHARE_START = "com.harmony.mobile.SHARE_START"
         const val EXTRA_SHARING = "sharing"
+        const val EXTRA_SCREEN_DATA = "screenData"
+        const val EXTRA_HEIGHT = "height"
+        const val EXTRA_FPS = "fps"
         const val EXTRA_ORIGIN = "origin"
         const val EXTRA_COOKIE = "cookie"
         const val EXTRA_CHANNEL = "channel"
@@ -193,5 +217,12 @@ class CallService : Service() {
             .putExtra(EXTRA_COOKIE, cookie)
             .putExtra(EXTRA_CHANNEL, channelId)
             .putExtra(EXTRA_CHANNEL_NAME, channelName)
+
+        fun shareStartIntent(context: Context, data: Intent, height: Int, fps: Int): Intent =
+            Intent(context, CallService::class.java)
+                .setAction(ACTION_SHARE_START)
+                .putExtra(EXTRA_SCREEN_DATA, data)
+                .putExtra(EXTRA_HEIGHT, height)
+                .putExtra(EXTRA_FPS, fps)
     }
 }
