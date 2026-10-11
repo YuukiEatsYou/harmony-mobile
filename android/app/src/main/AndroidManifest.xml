@@ -38,11 +38,35 @@
             android:theme="@style/AppTheme.NoActionBar"
         />
 
+        <!-- The in-call screen, opened from the call notification or the voice
+             button over an instance. The call itself lives in CallService. -->
+        <activity
+            android:name=".CallActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:theme="@style/AppTheme.NoActionBar"
+        />
+
+        <!-- The shared screen, or the roster; opened from the call bar. -->
+        <activity
+            android:name=".VoiceViewActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme.NoActionBar"
+        />
+
         <!-- Screen capture, which Android requires to run as a foreground service. -->
         <service
             android:name=".ScreenShareService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection"
+        />
+
+        <!-- Keeps a live call, and the microphone access it needs, while the
+             app is in the background. mediaProjection is added while sharing. -->
+        <service
+            android:name=".CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone|mediaProjection"
         />
 
         <provider
@@ -52,16 +76,42 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Debug only: lets adb drive the native voice checks without the UI. -->
+        <receiver
+            android:name=".VoiceDebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.harmony.mobile.VOICE_PROBE" />
+                <action android:name="com.harmony.mobile.VOICE_JOIN" />
+                <action android:name="com.harmony.mobile.VOICE_LEAVE" />
+                <action android:name="com.harmony.mobile.VOICE_STOP" />
+                <action android:name="com.harmony.mobile.VOICE_FORGET" />
+                <action android:name="com.harmony.mobile.VOICE_OPEN" />
+                <action android:name="com.harmony.mobile.VOICE_INSTANCE" />
+                <action android:name="com.harmony.mobile.VOICE_MUTE" />
+                <action android:name="com.harmony.mobile.VOICE_DEAFEN" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- WebRTC's own network monitor reads ConnectivityManager. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Voice chat captures the microphone. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Screen sharing runs behind a foreground service. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <!-- A live call runs behind a foreground service, which is also what keeps the
+         microphone working once the app leaves the foreground. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <!-- A call asks for the battery-optimization exemption, because on aggressive
+         ROMs an unexempt app is killed (or its stopped activity destroyed) even
+         behind a foreground service. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

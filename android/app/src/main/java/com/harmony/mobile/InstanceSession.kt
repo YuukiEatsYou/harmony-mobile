@@ -9,14 +9,20 @@ import android.content.Context
  *
  * It is cleared only when the person leaves the instance on purpose (the back
  * gesture), not when the task is swiped away: a swipe is itself a restart we
- * want to resume from.
+ * want to resume from. A second key, never cleared, keeps the most recent
+ * instance around for things that need one even from the selector -- the call
+ * diagnostics test native voice against it.
  */
 object InstanceSession {
     private const val PREFS = "harmony.instance"
     private const val KEY_LAST_URL = "lastUrl"
+    private const val KEY_LAST_OPENED = "lastOpened"
 
     fun remember(context: Context, url: String) {
-        prefs(context).edit().putString(KEY_LAST_URL, url).apply()
+        prefs(context).edit()
+            .putString(KEY_LAST_URL, url)
+            .putString(KEY_LAST_OPENED, url)
+            .apply()
     }
 
     /** Forgets the instance, so a resumed shell shows the selector. */
@@ -28,6 +34,17 @@ object InstanceSession {
     @JvmStatic
     fun lastUrl(context: Context): String? {
         val url = prefs(context).getString(KEY_LAST_URL, null)
+        return if (url.isNullOrBlank()) null else url
+    }
+
+    /**
+     * The most recent instance ever opened, kept even after it was left on
+     * purpose. Its session cookie outlives leaving too, so this is what a
+     * from-the-selector tool (like the voice test) can still act on.
+     */
+    @JvmStatic
+    fun lastOpened(context: Context): String? {
+        val url = prefs(context).getString(KEY_LAST_OPENED, null)
         return if (url.isNullOrBlank()) null else url
     }
 

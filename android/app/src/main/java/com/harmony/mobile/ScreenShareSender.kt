@@ -8,7 +8,8 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONObject
 
 /**
- * Bridges the injected shim in an instance webview to native screen capture.
+ * Bridges the injected shim in an instance webview to native: screen capture
+ * control, the instance's theme color, and whether a call is currently live.
  * Control messages are JSON strings; captured frames are raw JPEG bytes, sent
  * as an ArrayBuffer or (when the webview cannot transfer buffers) base64.
  */
@@ -17,6 +18,7 @@ class ScreenShareSender(
     private val onStartRequested: (height: Int, frameRate: Int) -> Unit,
     private val onStopRequested: () -> Unit,
     private val onThemeRequested: (background: String) -> Unit,
+    private val onCallChanged: (active: Boolean) -> Unit,
 ) {
     private val arrayBufferSupported =
         WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_ARRAY_BUFFER)
@@ -37,6 +39,7 @@ class ScreenShareSender(
             "start" -> onStartRequested(json.optInt("height", 720), json.optInt("frameRate", 30))
             "stop" -> onStopRequested()
             "theme" -> onThemeRequested(json.optString("background"))
+            "call" -> onCallChanged(json.optBoolean("active"))
         }
     }
 

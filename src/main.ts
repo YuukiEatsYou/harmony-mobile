@@ -12,6 +12,7 @@ import { probeInstance } from './lib/meta';
 import { openInstance } from './lib/instance';
 import { routeDeepLink } from './lib/deeplink';
 import { initNotifications } from './lib/notifications';
+import { closeDiagnostics, openDiagnostics } from './ui/diagnostics';
 
 const root = document.getElementById('app');
 if (!root) throw new Error('Shell mount point #app is missing.');
@@ -31,6 +32,9 @@ const shell = mountShell(root, {
     servers = await addServer(server);
     render();
     return server;
+  },
+  onDiagnostics() {
+    openDiagnostics();
   },
 });
 
@@ -55,6 +59,7 @@ async function boot(): Promise<void> {
   });
 
   void CapacitorApp.addListener('backButton', ({ canGoBack }) => {
+    if (closeDiagnostics()) return;
     if (shell.handleBack()) return;
     if (!canGoBack) void CapacitorApp.exitApp();
   });

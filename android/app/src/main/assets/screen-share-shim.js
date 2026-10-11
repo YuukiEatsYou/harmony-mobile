@@ -1,11 +1,27 @@
 /*
  * Injected at document start into every instance webview (see
- * InstanceWebViewActivity). Android's WebView has no getDisplayMedia, and the
- * Harmony client cannot be modified, so this provides one: it asks native
- * (MediaProjection) for frames, draws them to a canvas, and hands back the
- * canvas-captured video track. The client calls getDisplayMedia and replaceTrack
- * exactly as it would in a browser.
+ * InstanceWebViewActivity). It does two things for the instance's own client,
+ * which cannot be modified:
+ *
+ *  - Android's WebView has no getDisplayMedia, so it provides one: it asks native
+ *    (MediaProjection) for frames, draws them to a canvas, and hands back the
+ *    canvas-captured video track. The client calls getDisplayMedia and
+ *    replaceTrack exactly as it would in a browser.
+ *  - It reports when a call is live, so native can run the call foreground
+ *    service that keeps the microphone and the process alive once the app is
+ *    backgrounded. The client signals a call by creating its RTCPeerConnection
+ *    (see its lib/voice.svelte), so that is what is watched.
  */
+
+/*
+ * The host runs voice natively, so the client must leave calling to us: it keeps
+ * the rosters it shows in the sidebar but never joins or resumes a call of its
+ * own. A member holds one voice seat and the platform mutes one of two captures,
+ * so the webview's own call would starve the native one. The client reads this
+ * (see its lib/voice-mode.ts).
+ */
+window.__harmonyVoiceDisabled = true;
+
 (() => {
   "use strict";
 
@@ -114,6 +130,64 @@
     });
   } catch {
     // Theming the bars is best-effort.
+  }
+
+  /*
+   * Report the call lifecycle so native can hold a call foreground service.
+   * Native now watches the microphone itself (see CallWatcher.kt) and starts the
+   * service while the app is still foreground, so this is a second signal: it
+   * catches a call the microphone watcher might miss, and reports an ended call
+   * promptly. The client opens one RTCPeerConnection per call (and closes it when
+   * the call ends or is rebuilt), so wrapping it is the signal. A short delay on
+   * the way out absorbs a rebuild's close-then-open, which would otherwise
+   * flicker the service (and its notification) off and on.
+   */
+  try {
+    const NativeRTC = window.RTCPeerConnection;
+    if (NativeRTC && !NativeRTC.__harmonyCallHook) {
+      let live = 0;
+      let offTimer = null;
+      const report = (active) => channel.postMessage(JSON.stringify({ type: "call", active }));
+      const changed = () => {
+        if (live > 0) {
+          if (offTimer !== null) {
+            clearTimeout(offTimer);
+            offTimer = null;
+          }
+          report(true);
+        } else if (offTimer === null) {
+          offTimer = setTimeout(() => {
+            offTimer = null;
+            if (live === 0) report(false);
+          }, 3000);
+        }
+      };
+      function HarmonyRTC(...args) {
+        const pc = new NativeRTC(...args);
+        live += 1;
+        changed();
+        const close = pc.close.bind(pc);
+        let closed = false;
+        pc.close = () => {
+          if (closed) return;
+          closed = true;
+          live = Math.max(0, live - 1);
+          changed();
+          close();
+        };
+        return pc;
+      }
+      HarmonyRTC.prototype = NativeRTC.prototype;
+      if (typeof NativeRTC.generateCertificate === "function") {
+        HarmonyRTC.generateCertificate = NativeRTC.generateCertificate.bind(NativeRTC);
+      }
+      HarmonyRTC.__harmonyCallHook = true;
+      window.RTCPeerConnection = HarmonyRTC;
+      // A navigation or reload ends any call without a close().
+      window.addEventListener("pagehide", () => report(false));
+    }
+  } catch {
+    // Best-effort: never break the page over this.
   }
 
   navigator.mediaDevices.getDisplayMedia = async (constraints) => {

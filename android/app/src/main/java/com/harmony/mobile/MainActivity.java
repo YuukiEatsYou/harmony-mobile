@@ -14,6 +14,9 @@ public class MainActivity extends BridgeActivity {
         // Local (app-owned) plugin that opens an instance in our own webview,
         // which can inject the screen-share shim. See InstanceWebViewActivity.
         registerPlugin(HarmonyWebViewPlugin.class);
+        // Exposes the on-device call diagnostics to the shell, so a device with
+        // no adb can still report why a background call failed.
+        registerPlugin(HarmonyDiagnosticsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 

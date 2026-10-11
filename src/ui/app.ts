@@ -6,6 +6,8 @@ export interface ShellHandlers {
   onRemove(server: Server): void;
   /** Adds a server; resolves with it, or rejects with a readable message. */
   onAdd(address: string): Promise<Server>;
+  /** Opens the on-device call diagnostics; reached by holding the title. */
+  onDiagnostics?(): void;
 }
 
 export interface Shell {
@@ -39,7 +41,33 @@ function monogram(name: string): HTMLElement {
 
 export function mountShell(root: HTMLElement, handlers: ShellHandlers): Shell {
   const header = el('header', { class: 'shell-header' });
-  header.append(el('h1', { class: 'shell-title', text: 'Harmony' }));
+  const title = el('h1', { class: 'shell-title', text: 'Harmony' });
+
+  // A long press on the title opens the on-device call diagnostics. It is a
+  // support affordance, so it stays out of the way (see src/ui/diagnostics.ts).
+  if (handlers.onDiagnostics) {
+    let holdTimer: number | null = null;
+    const cancelHold = (): void => {
+      if (holdTimer !== null) {
+        window.clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+    };
+    title.addEventListener('pointerdown', () => {
+      cancelHold();
+      holdTimer = window.setTimeout(() => {
+        holdTimer = null;
+        handlers.onDiagnostics?.();
+      }, 700);
+    });
+    title.addEventListener('pointerup', cancelHold);
+    title.addEventListener('pointerleave', cancelHold);
+    title.addEventListener('pointercancel', cancelHold);
+    title.addEventListener('contextmenu', (event) => event.preventDefault());
+    title.classList.add('shell-title-holdable');
+  }
+
+  header.append(title);
 
   const hint = el('p', {
     class: 'servers-empty',

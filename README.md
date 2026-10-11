@@ -39,6 +39,40 @@ requested separately, on first use.
 
 Notifications are designed for but not built yet — see `UPSTREAM_CHANGES.md`.
 
+### Calls in the background
+
+The voice call is the instance's own web client, running in the webview this app
+hosts — there is no native media stack here. That makes one thing necessary:
+Android cuts a backgrounded app's microphone and is quick to kill it, which is
+what ended calls as soon as someone switched to another app (to share it, say).
+A call therefore runs behind a foreground service of type `microphone`
+(`CallService.kt`), which keeps both the microphone and the process alive while
+the app is away. The app decides when that service runs (`CallWatcher.kt`)
+natively — from the client asking for the microphone, and from Android's audio
+mode going to `MODE_IN_COMMUNICATION` (which WebRTC sets for the duration of a
+call) — rather than only trusting a message from the injected shim: that message
+can arrive after the app is backgrounded, where Android forbids starting a
+foreground service, so the service never came up and aggressive ROMs reclaimed the
+process. A native signal starts the service while the app is still in the
+foreground and stops it when the call genuinely ends, not on a peer-connection
+rebuild.
+
+On first joining a call, the app also asks to be exempt from battery
+optimization: on aggressive ROMs an unexempt app — or its stopped activity — is
+killed in the background even behind a foreground service, which both drops the
+call and forces the instance to reload when the app is reopened.
+
+### Call diagnostics
+
+Some OEM ROMs kill a live call, and a device with no computer attached cannot run
+`adb`. The app therefore carries its own diagnostics: **hold the "Harmony" title**
+on the server list to open a screen showing whether the call foreground service is
+running, the last result of starting it, microphone-permission and
+battery-optimization state, and a rolling event log. **Share** sends it with the
+normal Android share sheet, and **Battery settings** opens the system
+battery-optimization list. The log is also written to `harmony-diagnostics.log` in
+the app's files directory.
+
 ## Requirements
 
 - Node.js 20 or newer
@@ -131,7 +165,11 @@ physical device, use the machine's LAN address, e.g. `192.168.1.50:8787`.
   `ScreenShareService.kt` (MediaProjection capture), `ScreenShareSender.kt` (the
   shim bridge), and `app/src/main/assets/screen-share-shim.js` (the
   `getDisplayMedia` polyfill). `InstanceSession.kt` remembers the last instance
-  so `MainActivity` can resume it.
+  so `MainActivity` can resume it, and `CallService.kt` keeps a call alive in the
+  background. The start of **native voice** — the app's own call stack, so a call
+  outlives the instance webview — is `NativeVoice.kt` (`NativeVoiceSession.kt`,
+  `VoiceEngine.kt`, `VoiceSignaling.kt`, `VoiceApi.kt`, `SessionCookie.kt`), with
+  the call UI in `CallActivity.kt` and `VoiceCall.kt`; see `docs/native-voice.md`.
 - `scripts/` — plain-Node tests.
 - `harmony/` — a local Harmony checkout to test against (git-ignored).
 

@@ -10,8 +10,10 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -28,8 +30,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
+import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import org.json.JSONObject
 
 /**
  * Hosts one instance's own web client in a webview this app controls, so the
@@ -41,11 +45,15 @@ class InstanceWebViewActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var container: FrameLayout
+    private lateinit var root: LinearLayout
+    private var callBar: VoiceCallBar? = null
     private var insetsController: WindowInsetsControllerCompat? = null
     private var instanceHost: String? = null
     private var pendingPermission: PermissionRequest? = null
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var sender: ScreenShareSender? = null
+    private var callWatcher: CallWatcher? = null
+    private var instanceUrl: String? = null
     private var pendingHeight = 720
     private var pendingFrameRate = 30
 
@@ -95,6 +103,18 @@ class InstanceWebViewActivity : AppCompatActivity() {
             }
         }
 
+    /** The system screen-capture consent for a *native* share (see [toggleScreenShare]). */
+    private val nativeScreenConsent =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            CallDiagnostics.record(this, "native voice: share consent result=${result.resultCode}")
+            if (result.resultCode == Activity.RESULT_OK && data != null) {
+                VoiceCall.session?.startScreenShare(this, data, SCREEN_HEIGHT, SCREEN_FPS)
+            } else {
+                setSharingForeground(false)
+            }
+        }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,6 +126,7 @@ class InstanceWebViewActivity : AppCompatActivity() {
         // The shell resumes this instance if the app is restarted or the task is
         // brought back, so it does not drop the person at the server selector.
         InstanceSession.remember(this, url)
+        instanceUrl = url
         instanceHost = runCatching { Uri.parse(url).host }.getOrNull()
 
         webView = WebView(this)
@@ -120,8 +141,18 @@ class InstanceWebViewActivity : AppCompatActivity() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ),
         )
-        setContentView(
+        // The client fills the space above the call bar; the bar is added below it
+        // (and only while a call is live), so it never covers the composer.
+        root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(BACKGROUND_COLOR)
+        }
+        root.addView(
             container,
+            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f),
+        )
+        setContentView(
+            root,
             ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -136,7 +167,7 @@ class InstanceWebViewActivity : AppCompatActivity() {
         insetsController = WindowInsetsControllerCompat(window, container)
         insetsController?.isAppearanceLightStatusBars = false
         insetsController?.isAppearanceLightNavigationBars = false
-        ViewCompat.setOnApplyWindowInsetsListener(container) { view, insets ->
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
             )
@@ -180,6 +211,8 @@ class InstanceWebViewActivity : AppCompatActivity() {
             override fun onPermissionRequest(request: PermissionRequest) {
                 // The client's voice chat asks for the microphone.
                 val wantsAudio = request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                // A native, foreground, app-specific call signal (see CallWatcher).
+                if (wantsAudio) callWatcher?.noteMicRequested()
                 val granted = ContextCompat.checkSelfPermission(
                     this@InstanceWebViewActivity,
                     Manifest.permission.RECORD_AUDIO,
@@ -222,6 +255,7 @@ class InstanceWebViewActivity : AppCompatActivity() {
                 onStartRequested = { height, frameRate -> requestScreenShare(height, frameRate) },
                 onStopRequested = { stopScreenShare() },
                 onThemeRequested = { background -> applyThemeColor(background) },
+                onCallChanged = { active -> callWatcher?.setShimActive(active) },
             )
             sender = bridge
             ScreenFrameSink.sender = bridge
@@ -230,6 +264,24 @@ class InstanceWebViewActivity : AppCompatActivity() {
             }
             WebViewCompat.addWebMessageListener(webView, SCREEN_CHANNEL, setOf("*"), listener)
         }
+
+        // The client cannot join voice itself -- its voice is switched off by the
+        // shim -- so its channel list hands a tap on a voice channel to us here.
+        // See UPSTREAM_CHANGES section 7.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            val voiceListener = WebViewCompat.WebMessageListener { _, message, _, _, _ ->
+                handleVoiceHostMessage(message)
+            }
+            WebViewCompat.addWebMessageListener(webView, VOICE_CHANNEL, setOf("*"), voiceListener)
+        }
+
+        // Call state is watched at the microphone (CallWatcher), not only from the
+        // shim's report, so the call foreground service is started while the app
+        // is still foreground. The shim report stays as a second signal.
+        val watcher = CallWatcher(this) { active -> setInCall(active) }
+        callWatcher = watcher
+        watcher.start()
+        CallDiagnostics.record(this, "instance opened at $instanceHost")
 
         onBackPressedDispatcher.addCallback(
             this,
@@ -250,6 +302,25 @@ class InstanceWebViewActivity : AppCompatActivity() {
         webView.loadUrl(url)
     }
 
+    /**
+     * The client's channel list hands a voice-channel tap here, because the client
+     * cannot join voice itself (its voice is switched off by the shim). See
+     * UPSTREAM_CHANGES section 7.
+     */
+    private fun handleVoiceHostMessage(message: WebMessageCompat) {
+        if (message.type != WebMessageCompat.TYPE_STRING) return
+        val raw = message.data ?: return
+        val json = runCatching { JSONObject(raw) }.getOrNull() ?: return
+        when (json.optString("type")) {
+            "join" -> {
+                val url = instanceUrl ?: return
+                val name = json.optString("channelName").takeIf { it.isNotBlank() }
+                NativeVoice.startCall(this, url, json.optString("channelId"), name)
+            }
+            "leave" -> NativeVoice.leave(this)
+        }
+    }
+
     private fun requestScreenShare(height: Int, frameRate: Int) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -266,6 +337,117 @@ class InstanceWebViewActivity : AppCompatActivity() {
 
     private fun stopScreenShare() {
         stopService(Intent(this, ScreenShareService::class.java))
+    }
+
+    /**
+     * Runs a foreground service for the duration of a call, so the webview keeps
+     * the microphone and the process is not reclaimed while the app is away. The
+     * call itself is the web client; this only keeps it alive.
+     */
+    private fun setInCall(active: Boolean) {
+        val intent = Intent(this, CallService::class.java)
+        try {
+            if (active) {
+                // Without the notification permission the service still runs, but
+                // its notification is suppressed, which makes it look like nothing
+                // happened. Ask once, the way the screen-share flow does.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                ContextCompat.startForegroundService(this, intent)
+                Log.i(TAG, "call live; call foreground service requested")
+                // Ask to be exempt from battery optimization, which is what keeps
+                // this call (and the instance activity) alive on aggressive ROMs.
+                BatteryOptimization.requestForCall(this)
+            } else {
+                stopService(intent)
+                Log.i(TAG, "call ended; call foreground service stopped")
+            }
+        } catch (e: Exception) {
+            // Losing the mic and being killable in the background is much worse
+            // than a missing notification, so never let this take the call down.
+            // Starting a foreground service from the background is disallowed on
+            // Android 12+, and that is the failure we are hunting -- so record it
+            // where the person can share it.
+            CallDiagnostics.lastError =
+                "startForegroundService failed: ${e.javaClass.simpleName}: ${e.message}"
+            CallDiagnostics.record(
+                this,
+                "could not update the call foreground service: ${e.javaClass.simpleName}: ${e.message}",
+            )
+            Log.w(TAG, "could not update the call foreground service", e)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Show the call bar while a call is live, and keep it in step.
+        VoiceCall.addListener(callBarListener)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Returning mid-call: the recording callback may not fire again, so
+        // re-read the microphone state to keep the service in sync.
+        callWatcher?.seed()
+        CallDiagnostics.record(this, "instance resumed")
+    }
+
+    override fun onStop() {
+        super.onStop()
+        VoiceCall.removeListener(callBarListener)
+        CallDiagnostics.record(this, "instance stopped (backgrounded)")
+    }
+
+    private val callBarListener: (VoiceCall.State) -> Unit = { renderCallBar(it) }
+
+    private fun renderCallBar(state: VoiceCall.State) {
+        if (state.active) {
+            val bar = callBar ?: VoiceCallBar(this).also {
+                it.onOpen = { startActivity(Intent(this, VoiceViewActivity::class.java)) }
+                it.onToggleShare = { toggleScreenShare() }
+                callBar = it
+                // At the top, above the client: the bottom is where the keyboard
+                // and the gesture bar are, where an accidental tap is easy.
+                root.addView(it, 0)
+            }
+            bar.render(state)
+        } else {
+            callBar?.let { root.removeView(it) }
+            callBar = null
+        }
+    }
+
+    /** Starts or stops sharing this screen; the consent comes from the system. */
+    private fun toggleScreenShare() {
+        val session = VoiceCall.session
+        CallDiagnostics.record(
+            this,
+            "native voice: share tapped (session=${session != null}, sharing=${session?.isSharing})",
+        )
+        if (session == null) return
+        if (session.isSharing) {
+            session.stopScreenShare()
+            setSharingForeground(false)
+            return
+        }
+        // The service must already hold the mediaProjection foreground type before
+        // the system will hand out a projection (Android 14+).
+        setSharingForeground(true)
+        val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        nativeScreenConsent.launch(manager.createScreenCaptureIntent())
+    }
+
+    /** Adds or drops the mediaProjection foreground type on the running service. */
+    private fun setSharingForeground(sharing: Boolean) {
+        startService(
+            Intent(this, CallService::class.java)
+                .setAction(CallService.ACTION_SHARE)
+                .putExtra(CallService.EXTRA_SHARING, sharing),
+        )
     }
 
     private fun openExternally(target: Uri): Boolean =
@@ -298,8 +480,13 @@ class InstanceWebViewActivity : AppCompatActivity() {
      * kept going. Capacitor does not pause the shell's webview either.
      */
     override fun onDestroy() {
-        // Capture belongs to this webview; end it with the activity.
+        // Capture belongs to this webview; end it with the activity. The call does
+        // NOT: it lives in CallService, so closing or recreating the instance must
+        // leave it running -- this used to stopService here and drop the call.
+        callWatcher?.stop()
+        callWatcher = null
         stopScreenShare()
+        CallDiagnostics.record(this, "instance closed")
         ScreenFrameSink.sender = null
         sender = null
         webView.destroy()
@@ -309,7 +496,11 @@ class InstanceWebViewActivity : AppCompatActivity() {
     companion object {
         const val EXTRA_URL = "url"
         const val SCREEN_CHANNEL = "HarmonyScreen"
+        const val VOICE_CHANNEL = "HarmonyVoiceHost"
+        private const val TAG = "HarmonyVoice"
         private const val SHIM_ASSET = "screen-share-shim.js"
         private const val BACKGROUND_COLOR = 0xFF1A1B1EL.toInt()
+        private const val SCREEN_HEIGHT = 720
+        private const val SCREEN_FPS = 30
     }
 }
