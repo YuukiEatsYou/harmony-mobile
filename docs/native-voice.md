@@ -217,6 +217,10 @@ implementation:
   aborts with `libc++ Hardening assertion !empty() failed: front() called on an
   empty vector`. `VoiceEngine` sets `BuiltinAudio*FactoryFactory` and
   `DefaultVideo*Factory` (video needs an `EglBase`).
+- **A communication call routes to the earpiece by default.** WebRTC sets
+  `MODE_IN_COMMUNICATION`, which Android sends to the earpiece — right for a phone
+  call, wrong for a voice room. The output is chosen explicitly (`VoiceAudio`): the
+  speaker by default, switchable, since a device's default was audibly wrong.
 - **The call must not be tied to the instance activity.** The instance webview is
   destroyed when the app is reopened, so `InstanceWebViewActivity.onDestroy` must
   not stop `CallService`; the service owns the call precisely so it outlives the

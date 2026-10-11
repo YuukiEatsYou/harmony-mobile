@@ -33,6 +33,7 @@ class VoiceCallBar(context: Context) : LinearLayout(context) {
     private val subtitle: TextView
     private val mute: TextView
     private val deafen: TextView
+    private val speaker: TextView
     private val share: TextView
     private val screenChip: TextView
 
@@ -77,10 +78,12 @@ class VoiceCallBar(context: Context) : LinearLayout(context) {
 
         mute = control("Mute") { VoiceCall.toggleMute() }
         deafen = control("Deafen") { VoiceCall.toggleDeafen() }
+        speaker = control("Speaker") { VoiceCall.toggleSpeaker() }
         share = control("Share") { onToggleShare?.invoke() }
         val leave = control("Leave", danger = true) { NativeVoice.leave(context) }
         addView(mute)
         addView(deafen)
+        addView(speaker)
         addView(share)
         addView(leave)
     }
@@ -96,6 +99,8 @@ class VoiceCallBar(context: Context) : LinearLayout(context) {
         mute.background = rounded(if (state.muted) ACCENT else SURFACE_ALT, dp(10))
         deafen.text = if (state.deafened) "Undeafen" else "Deafen"
         deafen.background = rounded(if (state.deafened) ACCENT else SURFACE_ALT, dp(10))
+        speaker.text = if (state.speaker) "Speaker" else "Earpiece"
+        speaker.background = rounded(if (state.speaker) SURFACE_ALT else ACCENT, dp(10))
         share.text = if (state.localSharing) "Stop" else "Share"
         share.background = rounded(if (state.localSharing) ACCENT else SURFACE_ALT, dp(10))
         val anyoneSharing = state.localSharing || state.members.any { it.sharing }

@@ -40,6 +40,7 @@ class VoiceViewActivity : AppCompatActivity() {
     private lateinit var title: TextView
     private lateinit var mute: TextView
     private lateinit var deafen: TextView
+    private lateinit var speaker: TextView
     private lateinit var fullscreen: TextView
     private lateinit var stage: FrameLayout
     private lateinit var grid: GridLayout
@@ -168,9 +169,11 @@ class VoiceViewActivity : AppCompatActivity() {
         }
         mute = control("Mute") { VoiceCall.toggleMute() }
         deafen = control("Deafen") { VoiceCall.toggleDeafen() }
+        speaker = control("Speaker") { VoiceCall.toggleSpeaker() }
         val leave = control("Leave", danger = true) { NativeVoice.leave(this); finish() }
         controls.addView(mute, rowParams())
         controls.addView(deafen, rowParams())
+        controls.addView(speaker, rowParams())
         controls.addView(leave, rowParams())
         root.addView(controls)
 
@@ -196,6 +199,8 @@ class VoiceViewActivity : AppCompatActivity() {
         mute.background = rounded(if (state.muted) ACCENT else SURFACE, dp(12))
         deafen.text = if (state.deafened) "Undeafen" else "Deafen"
         deafen.background = rounded(if (state.deafened) ACCENT else SURFACE, dp(12))
+        speaker.text = if (state.speaker) "Speaker" else "Earpiece"
+        speaker.background = rounded(if (state.speaker) SURFACE else ACCENT, dp(12))
 
         val session = VoiceCall.session
         val sharer = state.members.firstOrNull { it.sharing }

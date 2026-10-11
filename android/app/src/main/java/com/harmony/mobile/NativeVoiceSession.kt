@@ -110,6 +110,11 @@ class NativeVoiceSession(
         post { runCatching { api.patch(channelId, JSONObject().put("deafened", deafened)) } }
     }
 
+    /** Sends the call's audio to the speaker or the earpiece. */
+    fun setSpeaker(speaker: Boolean) {
+        VoiceAudio.useSpeaker(context, speaker)
+    }
+
     /** The remote video track for a member, or null until the relay has sent one. */
     fun remoteVideoTrack(userId: String): VideoTrack? = remoteVideo[userId]
 
@@ -503,6 +508,9 @@ class NativeVoiceSession(
             CallDiagnostics.record(context, "native voice: connection $state")
             if (state == PeerConnection.PeerConnectionState.CONNECTED) {
                 VoiceCall.update { it.copy(connecting = false, connected = true) }
+                // Pick the output now that audio is flowing; Android defaults a
+                // communication call to the earpiece.
+                VoiceAudio.useSpeaker(context, VoiceCall.state.speaker)
                 post { pumpStats() }
             }
         }

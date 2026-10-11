@@ -31,6 +31,7 @@ object VoiceCall {
         val muted: Boolean = false,
         val deafened: Boolean = false,
         val localSharing: Boolean = false,
+        val speaker: Boolean = true,
         val members: List<Member> = emptyList(),
     )
 
@@ -80,5 +81,12 @@ object VoiceCall {
         val next = !state.deafened
         session?.setDeafened(next)
         update { it.copy(deafened = next) }
+    }
+
+    /** Switches between the speaker and the earpiece. */
+    fun toggleSpeaker() {
+        val next = !state.speaker
+        session?.setSpeaker(next)
+        update { it.copy(speaker = next) }
     }
 }
