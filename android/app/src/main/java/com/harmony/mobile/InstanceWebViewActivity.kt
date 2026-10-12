@@ -264,14 +264,24 @@ class InstanceWebViewActivity : AppCompatActivity() {
             }
         }
 
+        // The injected bridges are scoped to the instance's own origin, not "*":
+        // the HarmonyVoiceHost listener starts a native call, so only the
+        // instance's own client may reach it. A url that is not an http(s) origin
+        // yields null and registers nothing -- fail closed (see WebViewOrigin).
+        val allowedOrigins = WebViewOrigin.ruleFor(url)?.let { setOf(it) }
+
         // Inject getDisplayMedia before any page script runs.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        if (allowedOrigins != null &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+        ) {
             val shim = assets.open(SHIM_ASSET).bufferedReader().use { it.readText() }
-            WebViewCompat.addDocumentStartJavaScript(webView, shim, setOf("*"))
+            WebViewCompat.addDocumentStartJavaScript(webView, shim, allowedOrigins)
         }
 
         // Shuttle screen-share control and frames between the shim and native.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+        if (allowedOrigins != null &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+        ) {
             val bridge = ScreenShareSender(
                 webView,
                 onStartRequested = { height, frameRate -> requestScreenShare(height, frameRate) },
@@ -284,17 +294,19 @@ class InstanceWebViewActivity : AppCompatActivity() {
             val listener = WebViewCompat.WebMessageListener { _, message, _, _, replyProxy ->
                 bridge.handleMessage(message, replyProxy)
             }
-            WebViewCompat.addWebMessageListener(webView, SCREEN_CHANNEL, setOf("*"), listener)
+            WebViewCompat.addWebMessageListener(webView, SCREEN_CHANNEL, allowedOrigins, listener)
         }
 
         // The client cannot join voice itself -- its voice is switched off by the
         // shim -- so its channel list hands a tap on a voice channel to us here.
         // See UPSTREAM_CHANGES section 7.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+        if (allowedOrigins != null &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+        ) {
             val voiceListener = WebViewCompat.WebMessageListener { _, message, _, _, _ ->
                 handleVoiceHostMessage(message)
             }
-            WebViewCompat.addWebMessageListener(webView, VOICE_CHANNEL, setOf("*"), voiceListener)
+            WebViewCompat.addWebMessageListener(webView, VOICE_CHANNEL, allowedOrigins, voiceListener)
         }
 
         // The other direction of that bridge: push the native call state back to

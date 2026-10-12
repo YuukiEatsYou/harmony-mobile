@@ -77,14 +77,33 @@ class VoiceHostEmitter(private val webView: WebView) {
         webView.post {
             val script = "(function(){" +
                 "try{" +
-                "var m=JSON.parse(${JSONObject.quote(message)});" +
+                "var m=JSON.parse(${jsStringLiteral(message)});" +
                 "var h=window.HarmonyVoiceHost;" +
                 "if(h&&typeof h.onState==='function'){h.onState(m);return;}" +
                 "window.dispatchEvent(new CustomEvent('harmony:voice-state',{detail:m}));" +
                 "}catch(e){}})()"
-            webView.evaluateJavascript(script, null)
+            // A state change that lands just before onDestroy can leave this
+            // runnable queued past webView.destroy(), where evaluateJavascript
+            // throws (and a throw here would take the main thread down). The
+            // state is re-sent by the resync, so dropping one delivery is safe.
+            runCatching { webView.evaluateJavascript(script, null) }
         }
     }
+
+    /**
+     * Quotes [message] for embedding in a JS string literal. `JSONObject.quote`
+     * escapes `"`, `\`, `/` and the C0 controls, but not U+2028 / U+2029, which a
+     * JS engine that predates ES2019 (System WebView before Chrome 66) treats as
+     * line terminators *inside a string literal* -- a member or channel name
+     * containing one would make `JSON.parse("…")` a syntax error and stall the
+     * voice row. Escaping them keeps the literal parseable everywhere; the
+     * escaped sequence evaluates back to the same character, so the JSON is
+     * unchanged.
+     */
+    private fun jsStringLiteral(message: String): String =
+        JSONObject.quote(message)
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029")
 
     companion object {
         /** The terminal v1 message, when a call ends. */

@@ -102,6 +102,18 @@ grow without breaking the client. The shell builds the message in
 `VoiceHostEmitter` from `VoiceCall` (`channelId` is carried on
 `VoiceCall.State`).
 
+The injected bridges are scoped to the instance's own origin, not `"*"`. Both
+`WebViewCompat.addWebMessageListener` (`HarmonyVoiceHost`, `HarmonyScreen`) and
+the shim's `addDocumentStartJavaScript` are registered with the one allowed-origin
+rule built from the instance url (`WebViewOrigin`): the rule is
+`scheme://host[:port]` with the scheme's default port left off, and a url that is
+not an http(s) origin registers no bridge at all (fail closed). So a frame the
+WebView hosts under any other origin cannot reach the bridge and ask the shell to
+join a call or leave one. `VoiceHostEmitter` also escapes U+2028 / U+2029 in the
+string literal it injects (a name containing one is not a `JSON.parse` syntax
+error on a pre-ES2019 WebView) and ignores an `evaluateJavascript` that races
+`onDestroy`.
+
 ## Architecture
 
 ```
