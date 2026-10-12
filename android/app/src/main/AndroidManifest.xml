@@ -90,35 +90,9 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Debug only: lets adb drive the native voice checks without the UI. -->
-        <receiver
-            android:name=".VoiceDebugReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.harmony.mobile.VOICE_PROBE" />
-                <action android:name="com.harmony.mobile.VOICE_JOIN" />
-                <action android:name="com.harmony.mobile.VOICE_LEAVE" />
-                <action android:name="com.harmony.mobile.VOICE_STOP" />
-                <action android:name="com.harmony.mobile.VOICE_FORGET" />
-                <action android:name="com.harmony.mobile.VOICE_OPEN" />
-                <action android:name="com.harmony.mobile.VOICE_INSTANCE" />
-                <action android:name="com.harmony.mobile.VOICE_MUTE" />
-                <action android:name="com.harmony.mobile.VOICE_DEAFEN" />
-            </intent-filter>
-        </receiver>
-
-        <!-- Debug only: delivers a push payload without a provider, so the tap
-             path can be exercised on a device (the UnifiedPush adapter that
-             would normally call PushStore is not wired yet). PUSH_SHOW raises
-             the real tray notification. -->
-        <receiver
-            android:name=".PushDebugReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.harmony.mobile.PUSH_TAP" />
-                <action android:name="com.harmony.mobile.PUSH_SHOW" />
-            </intent-filter>
-        </receiver>
+        <!-- The debug receivers (VoiceDebugReceiver, PushDebugReceiver) live in
+             src/debug/AndroidManifest.xml, so a release build does not register
+             them at all (F3). -->
     </application>
 
     <!-- Permissions -->
