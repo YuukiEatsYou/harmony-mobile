@@ -1,13 +1,7 @@
 package com.harmony.mobile;
 
-import android.Manifest;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
-
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -36,18 +30,11 @@ public class MainActivity extends BridgeActivity {
         // registration (docs/PUSH.md §2). A no-op with no distributor installed.
         PushProvider.INSTANCE.ensureRegistered(this);
 
-        // Notifications need a runtime grant on Android 13+; a delivered message
-        // cannot be shown (and so cannot be tapped) without it. The exact moment
-        // to ask is a UX call (Sylphiette); ask once at launch for now.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                    this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
-        }
+        // The notification permission is NOT asked here: at launch the shell is
+        // only the server selector, with no reason yet to want notifications. It
+        // is asked once, in context, on the first instance open (YUC-21 §3) —
+        // see InstanceWebViewActivity.
     }
-
-    private static final int REQUEST_NOTIFICATIONS = 7301;
 
     @Override
     public void onNewIntent(Intent intent) {
