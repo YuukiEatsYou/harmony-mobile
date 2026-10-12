@@ -179,6 +179,11 @@ physical device, use the machine's LAN address, e.g. `192.168.1.50:8787`.
 push to `main` and uploads it as a run artifact. Pushing a `v*` tag additionally
 builds a **signed release** APK and publishes a GitHub Release with it attached.
 
+Every release this project publishes is a **preview build**. The release job
+marks it as a GitHub *prerelease* (so GitHub never lists it as "Latest") and puts
+"preview" in both the release title and the top of its body. The APKs are for
+upstream to verify functionality, not for stable distribution.
+
 ### One-time setup: the signing key
 
 A release APK has to be signed, and the key must be kept safe: Android refuses to
@@ -213,7 +218,8 @@ git push origin v0.2.0
 The tag is the source of truth for the version: `versionName` becomes `0.2.0`, and
 `versionCode` is derived from it as `major*10000 + minor*100 + patch`, so keep
 tags plain `vX.Y.Z`. The signed APK lands on the Releases page as
-`harmony-mobile-<version>.apk`.
+`harmony-mobile-<version>.apk`, under the release title
+`Harmony Mobile <version> (preview)` and flagged as a prerelease.
 
 A release APK is signed with your key rather than the debug key, so it will not
 install over a debug build -- uninstall the debug one first. Locally,
