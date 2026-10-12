@@ -11,7 +11,7 @@ import {
 import { probeInstance } from './lib/meta';
 import { openInstance } from './lib/instance';
 import { routeDeepLink } from './lib/deeplink';
-import { initNotifications } from './lib/notifications';
+import { initNotifications, registerPushEndpoint } from './lib/notifications';
 import { closeDiagnostics, openDiagnostics } from './ui/diagnostics';
 
 const root = document.getElementById('app');
@@ -31,6 +31,9 @@ const shell = mountShell(root, {
     const server = serverFromMeta(origin, meta);
     servers = await addServer(server);
     render();
+    // The endpoint is per install, so a newly added instance is registered too
+    // (docs/PUSH.md §3); a no-op until a push provider is wired.
+    void registerPushEndpoint([server]);
     return server;
   },
   onDiagnostics() {
@@ -51,8 +54,9 @@ async function boot(): Promise<void> {
   servers = await loadServers();
   render();
 
-  // No-op until push ships upstream (docs/PUSH.md).
-  await initNotifications();
+  // Wires the push provider (docs/PUSH.md); a no-op on the web preview and
+  // until a distributor supplies an endpoint.
+  await initNotifications(() => servers);
 
   void CapacitorApp.addListener('appUrlOpen', (event) => {
     void routeDeepLink(event.url, servers);

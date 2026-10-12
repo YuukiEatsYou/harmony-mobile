@@ -39,7 +39,11 @@ Capture runs behind a foreground service (Android requires it for screen capture
 with a Stop action in the notification. The microphone for voice chat is
 requested separately, on first use.
 
-Notifications are designed for but not built yet — see `UPSTREAM_CHANGES.md`.
+Notifications: the shell already subscribes to a provider endpoint, registers it
+with every instance, and routes a tap to the right instance and channel
+(`src/lib/notifications.ts`, `docs/PUSH.md`). The UnifiedPush connector that
+produces the endpoint is not wired yet, so the path is dormant until it lands —
+see `UPSTREAM_CHANGES.md`.
 
 ### Calls in the background
 
@@ -161,6 +165,8 @@ physical device, use the machine's LAN address, e.g. `192.168.1.50:8787`.
   - `src/lib/server-model.ts` — the pure merge / drop / select logic behind it.
   - `src/lib/instance.ts` — opening an instance in the in-app webview.
   - `src/lib/urls.ts` — pure URL and `harmony://` deep-link helpers.
+  - `src/lib/push.ts` — the pure push contract: the payload shape, the routing
+    key, and the device-registration request and fan-out.
   - `src/lib/notifications.ts`, `src/lib/deeplink.ts` — the seams for
     notifications and deep links.
 - `android/` — the Capacitor Android project. Screen sharing lives here:

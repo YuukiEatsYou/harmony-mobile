@@ -7,7 +7,10 @@ type are here, the provider is not wired yet. This document is the contract both
 sides are written against, so the router does not have to change when push
 ships.
 
-Status: **designed, not built.** The upstream work this needs is recorded in
+Status: **client seam wired, provider adapter pending.** The routing and the
+device registration are implemented and tested in plain Node; the UnifiedPush
+connector that actually produces an endpoint, and the on-device tap check,
+remain (tracked as a follow-up). The upstream work this needs is recorded in
 `UPSTREAM_CHANGES.md` (git-ignored hand-off notes); this repository never edits
 Harmony.
 
@@ -45,13 +48,21 @@ A sideloaded APK has no Google Play services, so the client expects a
 provider-agnostic push channel rather than FCM:
 
 - **UnifiedPush** or **ntfy**, choosing a distributor the user already runs, is
-  the recommended first provider for a sideloaded build.
+  the recommended first provider for a sideloaded build. **UnifiedPush is the
+  chosen provider** for this client.
 - The provider hands the install an endpoint and a delivery callback; the shell
   does not care which provider, only that it can produce one endpoint per
   install.
 
-`initNotifications()` (`src/lib/notifications.ts`) is where the provider is
-wired. It is deliberately empty today.
+`initNotifications()` (`src/lib/notifications.ts`) wires the provider. The
+provider runs natively (`PushEndpoint`, `HarmonyPushPlugin`), because a
+sideloaded APK has no Play services and the full request set — the register, the
+tap — is only reachable with the instance's own session, which page JavaScript
+cannot read. The UnifiedPush **connector** (the library + its
+`PushReceiver`) is not wired yet: `HarmonyPushPlugin.getEndpoint` returns
+`PushEndpoint.get()`, which is null until that adapter sets it. Until then the
+whole path is dormant but installed — the seam is `docs`-exact and one adapter
+away.
 
 ## §3 — Registering the device
 
@@ -71,7 +82,19 @@ DELETE /users/@me/push-devices
 ```
 
 The endpoint is per install, not per instance, so it is registered once per
-instance the user has added. These routes do not exist upstream yet.
+instance the user has added. The client now does exactly this: `initNotifications`
+registers at boot, `main.ts` registers a newly added instance, and `push.ts`
+(`registerEndpoint` / `unregisterEndpoint`) fans the one request out to every
+instance and tolerates a per-instance failure (a 401 there is just "not signed
+in here"). The request is carried natively (`pushDevices` → `PushDevices`) with
+each instance's own session cookie. These routes ship in Harmony (YUC-8:
+`PUT`/`DELETE /api/v1/users/@me/push-devices`).
+
+Removal today is for **endpoint rotation**: a new endpoint re-registers and the
+old one is deleted (`unregisterEndpoint`). **Sign-out** has no seam yet — the
+session ends inside the instance's webview, which the shell does not observe —
+so the stale device is cleaned up when the endpoint next rotates or when the
+account is removed upstream.
 
 ## §4 — Delivery
 
@@ -93,6 +116,14 @@ On a tap, the shell calls `routePushPayload(payload, servers)`:
 
 The result is deliberately a boolean, not an error: an unknown instance is a
 normal outcome (the user removed it), not a failure.
+
+The tap arrives from the OS as a payload the shell cannot read before it boots,
+so the native side buffers it (`PushStore`) and signals the shell: a tap that
+cold-started the app is drained at `initNotifications`, and a tap while the app
+is already alive drains on the `pushTap` signal. `takePendingTap` clears the
+buffer, so a payload is routed exactly once. The payload is validated and
+normalized before routing (`coercePushPayload`), so a malformed or truncated
+delivery is dropped rather than opening the wrong place.
 
 ## §6 — Payload shape
 
