@@ -1,5 +1,6 @@
 import type { Server } from './servers';
 import { openInstance } from './instance';
+import { findServer } from './server-model';
 
 /**
  * A notification payload, mirroring docs/PUSH.md §6. Push is not implemented
@@ -23,15 +24,19 @@ export interface PushPayload {
  * Handles a notification tap: finds the instance it came from and opens it
  * deep-linked to the channel and message. Returns false when the instance is
  * not one this install knows, which the caller should ignore.
+ *
+ * `payload.instanceId` is the routing key. It is the instance's stable id when
+ * the server sends one (docs/PUSH.md §1); otherwise the sender puts the origin
+ * there, so the same key is also tried as an origin.
  */
 export async function routePushPayload(
   payload: PushPayload,
   servers: Server[],
 ): Promise<boolean> {
-  const server = servers.find(
-    (candidate) =>
-      candidate.instanceId === payload.instanceId || candidate.origin === payload.instanceId,
-  );
+  const server = findServer(servers, {
+    instanceId: payload.instanceId,
+    origin: payload.instanceId,
+  });
   if (!server) return false;
   await openInstance(server.origin, {
     channelId: payload.channelId,

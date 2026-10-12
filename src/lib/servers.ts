@@ -1,5 +1,6 @@
 import { Preferences } from '@capacitor/preferences';
 import type { InstanceMeta } from './meta';
+import { dropServer, mergeServer } from './server-model';
 
 /** One signed-in instance, as kept by the launcher. */
 export interface Server {
@@ -57,15 +58,13 @@ export async function saveServers(servers: Server[]): Promise<void> {
 
 /** Adds a server, replacing any existing entry for the same origin. */
 export async function addServer(server: Server): Promise<Server[]> {
-  const servers = await loadServers();
-  const next = servers.filter((existing) => existing.origin !== server.origin);
-  next.push(server);
+  const next = mergeServer(await loadServers(), server);
   await saveServers(next);
   return next;
 }
 
 export async function removeServer(id: string): Promise<Server[]> {
-  const next = (await loadServers()).filter((server) => server.id !== id);
+  const next = dropServer(await loadServers(), id);
   await saveServers(next);
   return next;
 }
