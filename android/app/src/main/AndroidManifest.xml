@@ -69,6 +69,16 @@
             android:foregroundServiceType="microphone|mediaProjection"
         />
 
+        <!-- UnifiedPush: the connector forwards deliveries and endpoint updates
+             here (docs/PUSH.md §2/§4); this service hands them to the shell. -->
+        <service
+            android:name=".HarmonyPushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

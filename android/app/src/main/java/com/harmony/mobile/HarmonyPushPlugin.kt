@@ -13,31 +13,34 @@ import java.util.concurrent.Executors
  * contract is explicit:
  *
  * - `getEndpoint` — the install's provider endpoint, or null until a distributor
- *   has been chosen. A UnifiedPush/ntfy adapter sets it through [PushEndpoint].
+ *   has been chosen. [HarmonyPushService] sets it through [PushEndpoint].
  * - `pushDevices` — carries one push-device request to an instance using that
  *   instance's own session cookie ([PushDevices]).
  * - `takePendingTap` + the `pushTap` event — the payload of a notification tap,
  *   buffered in [PushStore] so a cold start is not lost before the shell boots.
+ * - the `pushEndpoint` event — the provider changed the endpoint, so the shell
+ *   re-registers.
  *
- * The provider adapter itself (the UnifiedPush connector + its receiver) is not
- * wired yet; until it is, `getEndpoint` returns null and registration is a
- * no-op, exactly as `docs/PUSH.md` describes.
+ * The provider itself is the UnifiedPush connector, subscribed by [PushProvider]
+ * and received by [HarmonyPushService].
  */
 @CapacitorPlugin(name = "HarmonyPush")
 class HarmonyPushPlugin : Plugin() {
     private val io = Executors.newSingleThreadExecutor()
 
     override fun load() {
-        instance = this
         // A tap that arrives while the shell is alive is routed now rather than
         // waiting for the next cold start. The event carries no payload: the
         // shell drains the single buffer through takePendingTap().
-        PushStore.onTapAvailable = { notifyListeners(EVENT_TAP, JSObject()) }
+        PushSignals.onTapAvailable = { notifyListeners(EVENT_TAP, JSObject()) }
+        // The provider produces or rotates the endpoint asynchronously; the shell
+        // re-registers when it changes, reading the value through getEndpoint().
+        PushSignals.onEndpointChanged = { notifyListeners(EVENT_ENDPOINT, JSObject()) }
     }
 
     override fun handleOnDestroy() {
-        if (instance === this) instance = null
-        PushStore.onTapAvailable = null
+        PushSignals.onTapAvailable = null
+        PushSignals.onEndpointChanged = null
         io.shutdown()
     }
 
@@ -73,8 +76,6 @@ class HarmonyPushPlugin : Plugin() {
 
     companion object {
         const val EVENT_TAP = "pushTap"
-
-        @Volatile
-        private var instance: HarmonyPushPlugin? = null
+        const val EVENT_ENDPOINT = "pushEndpoint"
     }
 }

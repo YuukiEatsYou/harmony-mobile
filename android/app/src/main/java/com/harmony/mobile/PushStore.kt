@@ -20,15 +20,6 @@ object PushStore {
     private const val KEY_PENDING_TAP = "pendingTap"
 
     /**
-     * Set by the HarmonyPush bridge while the shell is alive, so a tap that
-     * arrives now is routed without waiting for the next cold start. The event
-     * only signals that a payload is waiting; the payload itself comes from
-     * [takePendingTap], which is the single source of truth.
-     */
-    @Volatile
-    var onTapAvailable: (() -> Unit)? = null
-
-    /**
      * Buffers the payload carried by a launching or new intent and pings the
      * shell. The extra is removed so a later resume of the same intent does not
      * re-deliver the same tap. Returns true when there was one.
@@ -43,7 +34,7 @@ object PushStore {
     /** Buffers a payload and, when the shell is alive, tells it there is one. */
     fun deliver(context: Context, payload: String) {
         prefs(context).edit().putString(KEY_PENDING_TAP, payload).commit()
-        onTapAvailable?.invoke()
+        PushSignals.onTapAvailable?.invoke()
     }
 
     /** Returns and clears the buffered payload, or null when there is none. */

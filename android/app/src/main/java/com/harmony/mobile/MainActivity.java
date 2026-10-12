@@ -1,7 +1,13 @@
 package com.harmony.mobile;
 
+import android.Manifest;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
+
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -25,7 +31,23 @@ public class MainActivity extends BridgeActivity {
         // A notification tap that cold-started us: buffer it for the shell to
         // route once it has booted (docs/PUSH.md §5).
         PushStore.INSTANCE.consumeIntent(this, getIntent());
+
+        // Subscribe to the UnifiedPush distributor so an endpoint arrives for
+        // registration (docs/PUSH.md §2). A no-op with no distributor installed.
+        PushProvider.INSTANCE.ensureRegistered(this);
+
+        // Notifications need a runtime grant on Android 13+; a delivered message
+        // cannot be shown (and so cannot be tapped) without it. The exact moment
+        // to ask is a UX call (Sylphiette); ask once at launch for now.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(
+                    this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+        }
     }
+
+    private static final int REQUEST_NOTIFICATIONS = 7301;
 
     @Override
     public void onNewIntent(Intent intent) {
