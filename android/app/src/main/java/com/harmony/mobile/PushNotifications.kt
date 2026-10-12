@@ -46,7 +46,12 @@ object PushNotifications {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         val contentIntent = PendingIntent.getActivity(
             context,
-            0,
+            // F5: a per-payload request code. With a fixed code and
+            // FLAG_UPDATE_CURRENT, every stacked notification shared one content
+            // intent, so tapping an older one delivered the latest payload. The
+            // code now matches the notification id below, so each carries its
+            // own tap.
+            payload.hashCode(),
             open,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
