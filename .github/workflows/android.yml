@@ -179,8 +179,10 @@ jobs:
           name: harmony-mobile-preview-apk
           path: apk
 
+      # A stable asset name so a later push replaces it instead of piling up one
+      # APK per commit; the release body names the commit it was built from.
       - name: Name the validation APK
-        run: mv apk/app-debug.apk "apk/harmony-mobile-preview-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.apk"
+        run: mv apk/app-debug.apk "apk/harmony-mobile-preview-${GITHUB_REF_NAME//\//-}.apk"
 
       - uses: softprops/action-gh-release@v3
         with:
