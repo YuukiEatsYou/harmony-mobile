@@ -2,17 +2,16 @@
 
 How the shell delivers a notification from a Harmony instance to the right
 channel, and what the server / web client has to provide for it. The client
-half is a **seam** (`src/lib/notifications.ts`): the routing and the payload
-type are here, the provider is not wired yet. This document is the contract both
-sides are written against, so the router does not have to change when push
-ships.
+half is a **seam**: the pure contract (payload shape, routing key, device
+request) is `src/lib/push.ts`; the provider wiring and the tap routing are
+`src/lib/notifications.ts`. This document is the contract both sides are written
+against.
 
-Status: **client seam wired, provider adapter pending.** The routing and the
-device registration are implemented and tested in plain Node; the UnifiedPush
-connector that actually produces an endpoint, and the on-device tap check,
-remain (tracked as a follow-up). The upstream work this needs is recorded in
-`UPSTREAM_CHANGES.md` (git-ignored hand-off notes); this repository never edits
-Harmony.
+Status: **wired end to end against the UnifiedPush connector.** Routing, device
+registration, and the provider adapter (connector + service) are implemented;
+the on-device tap check is the remaining verification. The upstream work this
+needs is recorded in `UPSTREAM_CHANGES.md` (git-ignored hand-off notes); this
+repository never edits Harmony.
 
 ## Why a launcher needs this
 
@@ -55,14 +54,24 @@ provider-agnostic push channel rather than FCM:
   install.
 
 `initNotifications()` (`src/lib/notifications.ts`) wires the provider. The
-provider runs natively (`PushEndpoint`, `HarmonyPushPlugin`), because a
-sideloaded APK has no Play services and the full request set — the register, the
-tap — is only reachable with the instance's own session, which page JavaScript
-cannot read. The UnifiedPush **connector** (the library + its
-`PushReceiver`) is not wired yet: `HarmonyPushPlugin.getEndpoint` returns
-`PushEndpoint.get()`, which is null until that adapter sets it. Until then the
-whole path is dormant but installed — the seam is `docs`-exact and one adapter
-away.
+provider runs natively, because the whole request set — the register, the tap —
+is only reachable with the instance's own session, which page JavaScript cannot
+read:
+
+- **Subscription** — `PushProvider.ensureRegistered` (`MainActivity.onCreate`)
+  registers with the current or default distributor via the UnifiedPush
+  connector, when one is installed. With none installed it is a no-op and the
+  path stays dormant.
+- **Reception** — `HarmonyPushService` (a UnifiedPush `PushService`) receives an
+  endpoint (`onNewEndpoint`) and deliveries (`onMessage`) and writes them into
+  `PushEndpoint` and `PushStore`, the same seam the debug path uses.
+- **The shell reads them** through `HarmonyPushPlugin`
+  (`getEndpoint` / `pushDevices` / `takePendingTap`), signalled by a payload-free
+  `pushTap` / `pushEndpoint` event; the endpoint is read, never copied, and the
+  payload is drained once.
+
+The endpoint can arrive after boot, so registration is driven by the
+`pushEndpoint` signal and by app resume, not only by boot.
 
 ## §3 — Registering the device
 
@@ -90,10 +99,12 @@ in here"). The request is carried natively (`pushDevices` → `PushDevices`) wit
 each instance's own session cookie. These routes ship in Harmony (YUC-8:
 `PUT`/`DELETE /api/v1/users/@me/push-devices`).
 
-Removal today is for **endpoint rotation**: a new endpoint re-registers and the
-old one is deleted (`unregisterEndpoint`). **Sign-out** has no seam yet — the
-session ends inside the instance's webview, which the shell does not observe —
-so the stale device is cleaned up when the endpoint next rotates or when the
+Removal happens in two places. **Endpoint rotation:** a new endpoint
+re-registers and the old one is deleted. **Removing an instance** from the shell
+(`main.ts` `remove()` → `unregisterPushEndpoint`) deletes the endpoint from that
+instance while its cookies still exist — the one sign-out the shell can observe.
+A **sign-out inside an instance's webview** has no seam; the shell does not
+observe it, so that stale device is cleaned up on the next rotation or when the
 account is removed upstream.
 
 ## §4 — Delivery
@@ -102,6 +113,13 @@ The server decides who to notify and sends the payload below to the endpoint.
 The payload is self-contained: it names the instance it came from so the shell
 can route it without talking to the server first, which matters because the
 tap may open the app cold, off the network, or with the instance unreachable.
+
+On delivery, `HarmonyPushService.onMessage` raises a tray notification
+(`PushNotifications`) that carries the raw payload on its content intent; the
+**tap** is what routes. It does not open the instance by itself, so a delivered
+message is routed exactly once — from the tap. On Android 13+ this needs the
+`POST_NOTIFICATIONS` runtime grant; the app asks for it at launch (the exact
+moment is a UX call).
 
 ## §5 — Tap routing
 
@@ -117,17 +135,19 @@ On a tap, the shell calls `routePushPayload(payload, servers)`:
 The result is deliberately a boolean, not an error: an unknown instance is a
 normal outcome (the user removed it), not a failure.
 
-The tap arrives from the OS as a payload the shell cannot read before it boots,
-so the native side buffers it (`PushStore`) and signals the shell: a tap that
-cold-started the app is drained at `initNotifications`, and a tap while the app
-is already alive drains on the `pushTap` signal. `takePendingTap` clears the
-buffer, so a payload is routed exactly once. The payload is validated and
-normalized before routing (`coercePushPayload`), so a malformed or truncated
-delivery is dropped rather than opening the wrong place.
+A tap is a tray-notification tap whose content intent carries the payload
+(§4). The shell cannot read it before it boots, so the native side buffers it
+(`PushStore`) and signals the shell: a tap that cold-started the app is drained
+at `initNotifications`, and a tap while the app is already alive drains on the
+`pushTap` signal. `takePendingTap` clears the buffer, so a payload is routed
+exactly once. The payload is validated and normalized before routing
+(`coercePushPayload`), so a malformed or truncated delivery is dropped rather
+than opening the wrong place.
 
 ## §6 — Payload shape
 
-Mirrored by the `PushPayload` type in `src/lib/notifications.ts`:
+Mirrored by the `PushPayload` type in `src/lib/push.ts` (re-exported from
+`src/lib/notifications.ts`):
 
 | Field | Meaning |
 | --- | --- |

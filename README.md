@@ -39,11 +39,11 @@ Capture runs behind a foreground service (Android requires it for screen capture
 with a Stop action in the notification. The microphone for voice chat is
 requested separately, on first use.
 
-Notifications: the shell already subscribes to a provider endpoint, registers it
-with every instance, and routes a tap to the right instance and channel
-(`src/lib/notifications.ts`, `docs/PUSH.md`). The UnifiedPush connector that
-produces the endpoint is not wired yet, so the path is dormant until it lands —
-see `UPSTREAM_CHANGES.md`.
+Notifications: the app subscribes to a UnifiedPush distributor for one endpoint
+per install, registers that endpoint with every instance, and routes a
+notification tap to the right instance and channel (`src/lib/push.ts`,
+`src/lib/notifications.ts`, `docs/PUSH.md`). With no distributor installed the
+path stays dormant. The remaining check is a real tap on a device.
 
 ### Calls in the background
 
