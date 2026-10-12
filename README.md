@@ -175,9 +175,25 @@ physical device, use the machine's LAN address, e.g. `192.168.1.50:8787`.
 
 ## Releasing
 
-`.github/workflows/android.yml` builds a **debug** APK on every pull request and
-push to `main` and uploads it as a run artifact. Pushing a `v*` tag additionally
-builds a **signed release** APK and publishes a GitHub Release with it attached.
+`.github/workflows/android.yml` runs on the company fork
+(`hrmnychat-hue/harmony-mobile`) as well as on the canonical repository. Every
+push to **any** branch builds a **validation** debug APK and uploads it as the
+`harmony-mobile-preview-apk` run artifact, and republishes it as a rolling
+prerelease under the `preview/<branch>` tag. The upstream maintainer can
+therefore download a ready-made build from our repository and install it to
+verify a pull request, without building anything:
+
+- the release page: `https://github.com/hrmnychat-hue/harmony-mobile/releases/tag/preview/<branch>`
+- or the branch's latest Actions run artifact (`harmony-mobile-preview-apk`).
+
+Pushing a `v*` tag additionally builds a **signed release** APK and publishes a
+GitHub Release with it attached.
+
+Every build this project publishes is a **preview build**. The run summary is
+labeled as a preview, and the release jobs mark their releases as GitHub
+*prereleases* (so GitHub never lists one as "Latest") with "preview" in the
+title and the top of the body. The APKs are for upstream to verify
+functionality, not for stable distribution.
 
 ### One-time setup: the signing key
 
@@ -213,7 +229,8 @@ git push origin v0.2.0
 The tag is the source of truth for the version: `versionName` becomes `0.2.0`, and
 `versionCode` is derived from it as `major*10000 + minor*100 + patch`, so keep
 tags plain `vX.Y.Z`. The signed APK lands on the Releases page as
-`harmony-mobile-<version>.apk`.
+`harmony-mobile-<version>.apk`, under the release title
+`Harmony Mobile <version> (preview)` and flagged as a prerelease.
 
 A release APK is signed with your key rather than the debug key, so it will not
 install over a debug build -- uninstall the debug one first. Locally,
