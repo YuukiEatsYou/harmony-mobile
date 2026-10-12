@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
+        android:name=".HarmonyApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -106,12 +107,14 @@
 
         <!-- Debug only: delivers a push payload without a provider, so the tap
              path can be exercised on a device (the UnifiedPush adapter that
-             would normally call PushStore is not wired yet). -->
+             would normally call PushStore is not wired yet). PUSH_SHOW raises
+             the real tray notification. -->
         <receiver
             android:name=".PushDebugReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.harmony.mobile.PUSH_TAP" />
+                <action android:name="com.harmony.mobile.PUSH_SHOW" />
             </intent-filter>
         </receiver>
     </application>

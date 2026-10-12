@@ -42,8 +42,11 @@ requested separately, on first use.
 Notifications: the app subscribes to a UnifiedPush distributor for one endpoint
 per install, registers that endpoint with every instance, and routes a
 notification tap to the right instance and channel (`src/lib/push.ts`,
-`src/lib/notifications.ts`, `docs/PUSH.md`). With no distributor installed the
-path stays dormant. The remaining check is a real tap on a device.
+`src/lib/notifications.ts`, `docs/PUSH.md`). The tray text leads with the sender,
+uses a dedicated monochrome icon, and is suppressed while the app is foreground;
+the notification permission is asked once, on the first instance open. With no
+distributor installed the path stays dormant. The remaining check is a real tap
+on a device.
 
 ### Calls in the background
 

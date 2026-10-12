@@ -18,31 +18,29 @@ import org.json.JSONObject
  * the shell routes it once. Nothing is routed from here — a delivery only makes
  * the notification, and the tap is what opens the instance.
  *
- * The exact icon, wording, and the moment to ask for the notification permission
- * are a UX call (Sylphiette); this is the functional baseline.
+ * The wording, icon, permission timing, and foreground suppression follow the
+ * UX review (YUC-21).
  */
 object PushNotifications {
     private const val CHANNEL_ID = "harmony-push"
+    private const val CHANNEL_NAME = "Messages"
 
     /** Shows one notification for a payload; the payload is the tap's address. */
     fun show(context: Context, payload: String) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Messages", NotificationManager.IMPORTANCE_DEFAULT),
-            )
-        }
+        // Foreground arrival (YUC-21 §4): the instance's own client already
+        // surfaces the delivery in-app, so a tray post would double-signal and
+        // its tap would reopen where the person already is. Nothing is lost.
+        if (AppForeground.isForeground) return
 
         // Platform-permission reality: without the POST_NOTIFICATIONS grant (or
-        // with notifications off) the tray post is suppressed. There is nothing
-        // to tap, so if the shell is alive route now; otherwise the mention is
-        // simply lost rather than mis-routed on a later launch.
-        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-            if (PushSignals.onTapAvailable != null) PushStore.deliver(context, payload)
-            return
-        }
+        // with notifications off) there is no tray post, so there is nothing to
+        // tap. The mention is dropped rather than mis-routed later.
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
-        val (title, text) = summarize(payload)
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        ensureChannel(manager)
+
+        val content = contentFor(payload)
         val open = Intent(context, MainActivity::class.java)
             .putExtra(PushStore.EXTRA_PUSH_PAYLOAD, payload)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -54,12 +52,15 @@ object PushNotifications {
         )
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle(content.title)
+            .setContentText(content.body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(content.body))
+            .setSmallIcon(R.drawable.ic_stat_harmony)
+            // Category MESSAGE: Do Not Disturb and ranking treat it as a message.
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .setContentIntent(contentIntent)
+            .apply { content.subText?.let { setSubText(it) } }
             .build()
 
         // One notification per payload, so a repeat delivery replaces rather than
@@ -67,21 +68,29 @@ object PushNotifications {
         manager.notify(payload.hashCode(), notification)
     }
 
-    /** The display title and body, from the docs/PUSH.md §6 payload. */
-    private fun summarize(payload: String): Pair<String, String> {
-        return runCatching {
-            val json = JSONObject(payload)
-            val title = json.optString("channelName").ifBlank { json.optString("instanceName") }
-                .ifBlank { "Harmony" }
-            val author = json.optString("authorName")
-            val snippet = json.optString("snippet")
-            val text = when {
-                author.isNotBlank() && snippet.isNotBlank() -> "$author: $snippet"
-                snippet.isNotBlank() -> snippet
-                author.isNotBlank() -> author
-                else -> "New message"
-            }
-            title to text
-        }.getOrElse { "Harmony" to "New notification" }
+    private fun ensureChannel(manager: NotificationManager) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        // IMPORTANCE_DEFAULT: a mention is worth a sound, not a full-screen
+        // interruption.
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_DEFAULT),
+        )
+    }
+
+    /**
+     * Parses the payload at the trust boundary (an unparseable delivery is shown
+     * as a plain message rather than dropped here — the tap cannot route it
+     * either way) and maps the display fields with the pure [PushText].
+     */
+    private fun contentFor(payload: String): PushText.Content {
+        val json = runCatching { JSONObject(payload) }.getOrNull()
+            ?: return PushText.Content("Harmony", "New message", null)
+        return PushText.summarize(
+            kind = json.optString("kind"),
+            authorName = json.optString("authorName"),
+            channelName = json.optString("channelName"),
+            instanceName = json.optString("instanceName"),
+            snippet = json.optString("snippet").takeIf { it.isNotBlank() },
+        )
     }
 }

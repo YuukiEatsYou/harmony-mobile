@@ -117,9 +117,38 @@ tap may open the app cold, off the network, or with the instance unreachable.
 On delivery, `HarmonyPushService.onMessage` raises a tray notification
 (`PushNotifications`) that carries the raw payload on its content intent; the
 **tap** is what routes. It does not open the instance by itself, so a delivered
-message is routed exactly once — from the tap. On Android 13+ this needs the
-`POST_NOTIFICATIONS` runtime grant; the app asks for it at launch (the exact
-moment is a UX call).
+message is routed exactly once — from the tap.
+
+### Presentation (YUC-21)
+
+The wording, icon, permission timing, and foreground behaviour follow the UX
+review:
+
+- **Title** = `authorName`, else `channelName`, else `instanceName`, else
+  `Harmony` — author-first, because Android already renders the app label as the
+  header and the bold slot's job is the strongest identifier. **Body** =
+  `Mentioned you in #<channel>: <snippet>` (`Replied to you …` for a reply);
+  the `: <snippet>` and ` in #<channel>` parts drop when their value is blank.
+  **SubText** = `instanceName`, because the app is multi-instance. An
+  unparseable payload shows `Harmony` / `New message`. The mapping is the pure
+  `PushText.summarize` (unit-tested on the JVM in `PushTextTest`); parsing at the
+  trust boundary stays in `PushNotifications`.
+- **Icon**: a dedicated monochrome `res/drawable/ic_stat_harmony.xml` (the
+  three-pebble mark), not the system placeholder. Notification small icons are
+  alpha-only, so it is a single white fill the system tints.
+- **Category** `MESSAGE`, so Do Not Disturb and ranking treat it as a message;
+  the channel is `Messages` at `IMPORTANCE_DEFAULT`.
+- **Permission**: `POST_NOTIFICATIONS` is asked once, in context, on the first
+  instance open (`InstanceWebViewActivity.requestNotificationsOnce`), guarded by
+  a persisted flag (`NotificationPermission`) so a denial is not re-asked. It is
+  **not** asked at launch, when the shell is only the selector. The call and
+  screen-share flows keep their own causal asks, which serve the foreground
+  service.
+- **Foreground**: the tray is suppressed while any app activity is started
+  (`AppForeground`, fed by `HarmonyApplication`). The instance's own client
+  already surfaces a delivery in-app, so a tray post would double-signal. With
+  no `POST_NOTIFICATIONS` grant there is nothing to tap, so a backgrounded
+  delivery is dropped rather than mis-routed later.
 
 ## §5 — Tap routing
 
