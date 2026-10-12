@@ -58,6 +58,22 @@ class HarmonyPushPlugin : Plugin() {
             call.reject("origin, method and path are required.")
             return
         }
+        // Least privilege (F1): this bridge carries exactly the push-devices
+        // contract (docs/PUSH.md §3), not an arbitrary authenticated API proxy.
+        // A future script in the *shell* webview must not be able to reach any
+        // other route with an instance's session cookie, so anything outside
+        // the contract fails closed.
+        if (path != PUSH_DEVICES_PATH || (method != "PUT" && method != "DELETE")) {
+            call.reject("pushDevices only serves PUT/DELETE $PUSH_DEVICES_PATH.")
+            return
+        }
+        // The origin must be exactly a scheme://host[:port] and one this app has
+        // opened. The set is recorded natively (InstanceSession), so the caller
+        // cannot widen it.
+        if (SessionCookie.originOf(origin) != origin || !InstanceSession.knows(context, origin)) {
+            call.reject("unknown instance origin.")
+            return
+        }
         val body = call.getObject("body")?.toString()
         io.execute {
             try {
@@ -77,5 +93,12 @@ class HarmonyPushPlugin : Plugin() {
     companion object {
         const val EVENT_TAP = "pushTap"
         const val EVENT_ENDPOINT = "pushEndpoint"
+
+        /**
+         * The one route `pushDevices` serves (mirrors `PUSH_DEVICES_PATH` in
+         * `src/lib/push.ts`, docs/PUSH.md §3). Kept native so the allowlist does
+         * not depend on the caller telling the truth.
+         */
+        private const val PUSH_DEVICES_PATH = "/users/@me/push-devices"
     }
 }

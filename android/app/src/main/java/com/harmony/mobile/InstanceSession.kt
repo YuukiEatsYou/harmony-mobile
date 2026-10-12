@@ -17,13 +17,27 @@ object InstanceSession {
     private const val PREFS = "harmony.instance"
     private const val KEY_LAST_URL = "lastUrl"
     private const val KEY_LAST_OPENED = "lastOpened"
+    private const val KEY_ORIGINS = "origins"
 
     fun remember(context: Context, url: String) {
-        prefs(context).edit()
+        val origin = SessionCookie.originOf(url)
+        val editor = prefs(context).edit()
             .putString(KEY_LAST_URL, url)
             .putString(KEY_LAST_OPENED, url)
-            .apply()
+        // Accumulate the origins this app has actually opened. It is recorded
+        // here, natively, so it cannot be widened by the caller -- the push
+        // bridge validates against it (HarmonyPushPlugin.pushDevices).
+        if (origin != null) editor.putStringSet(KEY_ORIGINS, knownOrigins(context) + origin)
+        editor.apply()
     }
+
+    /**
+     * Whether this app has opened `origin`, the native record of the instances
+     * it can act against. Used to fail closed for the push-devices bridge:
+     * unlike the shell's own server list, a caller cannot add to it.
+     */
+    @JvmStatic
+    fun knows(context: Context, origin: String): Boolean = knownOrigins(context).contains(origin)
 
     /** Forgets the instance, so a resumed shell shows the selector. */
     fun forget(context: Context) {
@@ -47,6 +61,9 @@ object InstanceSession {
         val url = prefs(context).getString(KEY_LAST_OPENED, null)
         return if (url.isNullOrBlank()) null else url
     }
+
+    private fun knownOrigins(context: Context): Set<String> =
+        HashSet(prefs(context).getStringSet(KEY_ORIGINS, emptySet()) ?: emptySet())
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
