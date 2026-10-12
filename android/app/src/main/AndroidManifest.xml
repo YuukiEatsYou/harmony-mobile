@@ -93,6 +93,17 @@
                 <action android:name="com.harmony.mobile.VOICE_DEAFEN" />
             </intent-filter>
         </receiver>
+
+        <!-- Debug only: delivers a push payload without a provider, so the tap
+             path can be exercised on a device (the UnifiedPush adapter that
+             would normally call PushStore is not wired yet). -->
+        <receiver
+            android:name=".PushDebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.harmony.mobile.PUSH_TAP" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
