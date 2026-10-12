@@ -45,8 +45,9 @@ notification tap to the right instance and channel (`src/lib/push.ts`,
 `src/lib/notifications.ts`, `docs/PUSH.md`). The tray text leads with the sender,
 uses a dedicated monochrome icon, and is suppressed while the app is foreground;
 the notification permission is asked once, on the first instance open. With no
-distributor installed the path stays dormant. The remaining check is a real tap
-on a device.
+distributor installed the path stays dormant. The push endpoint is an
+unauthenticated capability and is kept out of Android backup and device transfer
+(`docs/PUSH.md` §2). The remaining check is a real tap on a device.
 
 ### Calls in the background
 

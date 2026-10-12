@@ -73,6 +73,27 @@ read:
 The endpoint can arrive after boot, so registration is driven by the
 `pushEndpoint` signal and by app resume, not only by boot.
 
+### Endpoint secrecy
+
+The endpoint returned by `PushProvider.ensureRegistered` is registered with
+`vapid = null`, so it is an **unauthenticated capability**: anyone who learns it
+can POST arbitrary payloads to it, which the app would present as a notification
+(spoofing/phishing). It is not a session credential and does not compromise an
+account, and a payload that cannot be routed is dropped
+(`coercePushPayload`/`findServer`), but it should still be treated as a secret:
+
+- It lives only in the `harmony.push` preferences (`PushEndpoint`) and is
+  registered per instance over the authenticated push-devices route; it never
+  appears in the shell's storage or in logs.
+- `harmony.push` (the endpoint and the buffered tap payload, which carries
+  author/channel/snippet metadata) is **excluded from Android backup and device
+  transfer** — see `res/xml/backup_rules.xml` and `res/xml/data_extraction_rules.xml`
+  (F4). It is not uploaded to a backup service or copied to a new device.
+- Prefer a distributor with an **authenticated topic**: ntfy with access control
+  (`Authorization` on publish) or a provider that signs with VAPID. The app
+  registers without a VAPID key today because the connector cannot carry the
+  private key; a signed-topic distributor narrows who can deliver to the endpoint.
+
 ## §3 — Registering the device
 
 The install registers its endpoint with **every signed-in instance**, per
@@ -98,6 +119,16 @@ instance and tolerates a per-instance failure (a 401 there is just "not signed
 in here"). The request is carried natively (`pushDevices` → `PushDevices`) with
 each instance's own session cookie. These routes ship in Harmony (YUC-8:
 `PUT`/`DELETE /api/v1/users/@me/push-devices`).
+
+The native bridge is deliberately narrower than a general API client (F1/F2):
+`pushDevices` rejects any path other than `/users/@me/push-devices` and any
+method other than `PUT`/`DELETE`, and requires the origin to be an instance this
+app has actually opened (recorded natively in `InstanceSession`, not supplied by
+the caller), so a script in the shell webview cannot use it as an authenticated
+proxy against a route or host it was not meant to reach. `PushDevices` sets
+`followRedirects(false)`/`followSslRedirects(false)`, so a 3xx is a per-instance
+failure rather than a request re-issued to the redirect host carrying the
+session cookie (and, on 307/308, the body).
 
 Removal happens in two places. **Endpoint rotation:** a new endpoint
 re-registers and the old one is deleted. **Removing an instance** from the shell

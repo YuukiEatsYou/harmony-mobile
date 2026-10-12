@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31) backup and transfer rules. Mirrors backup_rules.xml:
+  exclude the "harmony.push" preferences (the install's push endpoint and the
+  last-tap payload) from both cloud backup and device-to-device transfer, so the
+  unauthenticated endpoint capability and tap metadata do not leave the device
+  (F4, docs/PUSH.md §2).
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="harmony.push" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="harmony.push" />
+    </device-transfer>
+</data-extraction-rules>

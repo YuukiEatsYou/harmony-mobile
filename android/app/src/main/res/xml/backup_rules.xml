@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android full backup (API 30 and below). The "harmony.push" preferences hold
+  this install's push-provider endpoint and the last-tap payload. The endpoint is
+  an unauthenticated capability (anyone who learns it can inject notification
+  text) and the tap carries author/channel/snippet metadata, so neither belongs
+  in ADB or auto backup (F4, docs/PUSH.md §2).
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="harmony.push" />
+</full-backup-content>
