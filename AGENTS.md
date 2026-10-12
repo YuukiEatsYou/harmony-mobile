@@ -55,6 +55,25 @@ the branch on the fork and locally, then rebuild local `main` from
 `upstream/main` (`git fetch upstream && git switch main && git merge --ff-only
 upstream/main`).
 
+### Upstream publication rule (YUC-RULE-003)
+
+No change may dead-end on a local branch. A task that changes this repository is
+not done until its branch is pushed to the fork and a pull request is open
+against `upstream/main`. Publish before you call the task done and record the
+branch name and the pull request URL on the task.
+
+- Opening the pull request is ours; merging is the owner's, so waiting on a merge
+  is a valid `in_review`. A branch that exists only on the author's machine is a
+  dead end and is never a finished state.
+- If the change cannot be published yet - no push access, an unmerged
+  dependency, a build or review still pending - block the task with a named
+  owner and the exact next action instead of reporting completion.
+- A run that ends early does not drop the work: the next run publishes the
+  branch, or retires it explicitly with a recorded reason.
+- Never silently delete another agent's unpublished branch. Publish it, or
+  retire a superseded branch on purpose with the reason recorded and flag it to
+  the CTO.
+
 ## Clean workspace: leave nothing running
 
 Company rule YUC-RULE-001. Every employee leaves their workspace exactly as they
