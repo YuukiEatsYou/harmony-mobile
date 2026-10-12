@@ -27,6 +27,12 @@ object VoiceCall {
         val active: Boolean = false,
         val connecting: Boolean = false,
         val connected: Boolean = false,
+        /**
+         * The voice channel the call is in, or null when there is no call. The
+         * shell's host bridge reports this to the instance's own client, whose
+         * voice row keys on it (see [VoiceHostEmitter]).
+         */
+        val channelId: String? = null,
         val channelName: String? = null,
         val muted: Boolean = false,
         val deafened: Boolean = false,

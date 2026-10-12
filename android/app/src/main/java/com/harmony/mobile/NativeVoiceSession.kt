@@ -284,8 +284,8 @@ class NativeVoiceSession(
             post { joinRoom() }
         }
 
-        override fun onVoiceSignal(signalChannel: String, sdp: String) {
-            if (signalChannel != channelId) return
+        override fun onVoiceSignal(channelId: String, sdp: String) {
+            if (channelId != this@NativeVoiceSession.channelId) return
             val kinds = sdp.lineSequence()
                 .filter { it.startsWith("m=") }
                 .map { it.substringAfter("m=").substringBefore(" ") }
@@ -295,8 +295,8 @@ class NativeVoiceSession(
             post { applyOffer(sdp) }
         }
 
-        override fun onVoiceState(stateChannel: String, members: JSONArray) {
-            if (stateChannel != channelId) return
+        override fun onVoiceState(channelId: String, members: JSONArray) {
+            if (channelId != this@NativeVoiceSession.channelId) return
             val parsed = ArrayList<VoiceCall.Member>()
             val sharers = ArrayList<String>()
             for (index in 0 until members.length()) {

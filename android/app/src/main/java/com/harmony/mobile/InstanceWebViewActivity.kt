@@ -10,6 +10,8 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -53,10 +55,12 @@ class InstanceWebViewActivity : AppCompatActivity() {
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     private var sender: ScreenShareSender? = null
     private var callWatcher: CallWatcher? = null
+    private var voiceHost: VoiceHostEmitter? = null
     private var instanceUrl: String? = null
     private var pendingJoin: Pair<String, String?>? = null
     private var pendingHeight = 720
     private var pendingFrameRate = 30
+    private val resyncHandler = Handler(Looper.getMainLooper())
 
     private val audioPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -213,6 +217,16 @@ class InstanceWebViewActivity : AppCompatActivity() {
                 if (target.host == instanceHost) return false
                 return openExternally(target)
             }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                // A (re)loaded page starts with no call state and no handler, so
+                // re-send the current truth, and make sure the resync is running
+                // in case the call began after this activity started (the client
+                // re-assigns its handler asynchronously after it boots).
+                voiceHost?.refresh(VoiceCall.state)
+                startVoiceStateResync()
+            }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
@@ -250,14 +264,24 @@ class InstanceWebViewActivity : AppCompatActivity() {
             }
         }
 
+        // The injected bridges are scoped to the instance's own origin, not "*":
+        // the HarmonyVoiceHost listener starts a native call, so only the
+        // instance's own client may reach it. A url that is not an http(s) origin
+        // yields null and registers nothing -- fail closed (see WebViewOrigin).
+        val allowedOrigins = WebViewOrigin.ruleFor(url)?.let { setOf(it) }
+
         // Inject getDisplayMedia before any page script runs.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+        if (allowedOrigins != null &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+        ) {
             val shim = assets.open(SHIM_ASSET).bufferedReader().use { it.readText() }
-            WebViewCompat.addDocumentStartJavaScript(webView, shim, setOf("*"))
+            WebViewCompat.addDocumentStartJavaScript(webView, shim, allowedOrigins)
         }
 
         // Shuttle screen-share control and frames between the shim and native.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+        if (allowedOrigins != null &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+        ) {
             val bridge = ScreenShareSender(
                 webView,
                 onStartRequested = { height, frameRate -> requestScreenShare(height, frameRate) },
@@ -270,18 +294,24 @@ class InstanceWebViewActivity : AppCompatActivity() {
             val listener = WebViewCompat.WebMessageListener { _, message, _, _, replyProxy ->
                 bridge.handleMessage(message, replyProxy)
             }
-            WebViewCompat.addWebMessageListener(webView, SCREEN_CHANNEL, setOf("*"), listener)
+            WebViewCompat.addWebMessageListener(webView, SCREEN_CHANNEL, allowedOrigins, listener)
         }
 
         // The client cannot join voice itself -- its voice is switched off by the
         // shim -- so its channel list hands a tap on a voice channel to us here.
         // See UPSTREAM_CHANGES section 7.
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
+        if (allowedOrigins != null &&
+            WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+        ) {
             val voiceListener = WebViewCompat.WebMessageListener { _, message, _, _, _ ->
                 handleVoiceHostMessage(message)
             }
-            WebViewCompat.addWebMessageListener(webView, VOICE_CHANNEL, setOf("*"), voiceListener)
+            WebViewCompat.addWebMessageListener(webView, VOICE_CHANNEL, allowedOrigins, voiceListener)
         }
+
+        // The other direction of that bridge: push the native call state back to
+        // the client, whose sidebar voice row reads it. See VoiceHostEmitter.
+        voiceHost = VoiceHostEmitter(webView)
 
         // Call state is watched at the microphone (CallWatcher), not only from the
         // shim's report, so the call foreground service is started while the app
@@ -426,6 +456,10 @@ class InstanceWebViewActivity : AppCompatActivity() {
         super.onStart()
         // Show the call bar while a call is live, and keep it in step.
         VoiceCall.addListener(callBarListener)
+        // Push call state to the client while we are on screen, and keep the
+        // client's handler fed across a reload (see VoiceHostEmitter).
+        VoiceCall.addListener(voiceStateListener)
+        startVoiceStateResync()
     }
 
     override fun onResume() {
@@ -433,16 +467,48 @@ class InstanceWebViewActivity : AppCompatActivity() {
         // Returning mid-call: the recording callback may not fire again, so
         // re-read the microphone state to keep the service in sync.
         callWatcher?.seed()
+        // The webview may have reloaded while backgrounded, and the client's
+        // handler is fresh: re-send the current truth for the row.
+        voiceHost?.refresh(VoiceCall.state)
+        startVoiceStateResync()
         CallDiagnostics.record(this, "instance resumed")
     }
 
     override fun onStop() {
         super.onStop()
         VoiceCall.removeListener(callBarListener)
+        VoiceCall.removeListener(voiceStateListener)
+        stopVoiceStateResync()
         CallDiagnostics.record(this, "instance stopped (backgrounded)")
     }
 
     private val callBarListener: (VoiceCall.State) -> Unit = { renderCallBar(it) }
+
+    private val voiceStateListener: (VoiceCall.State) -> Unit = { voiceHost?.onCallState(it) }
+
+    /**
+     * Re-sends the live call state on a short interval. The client assigns its
+     * handler asynchronously after it boots and there is no client-to-shell sync
+     * request in v1, so a state sent at page-load time can land before the
+     * handler exists; the repeat is how the row recovers. It only runs while a
+     * call is live.
+     */
+    private val voiceStateResync = object : Runnable {
+        override fun run() {
+            if (!VoiceCall.state.active) return
+            voiceHost?.refresh(VoiceCall.state)
+            resyncHandler.postDelayed(this, VOICE_STATE_RESYNC_MS)
+        }
+    }
+
+    private fun startVoiceStateResync() {
+        resyncHandler.removeCallbacks(voiceStateResync)
+        if (VoiceCall.state.active) resyncHandler.postDelayed(voiceStateResync, VOICE_STATE_RESYNC_MS)
+    }
+
+    private fun stopVoiceStateResync() {
+        resyncHandler.removeCallbacks(voiceStateResync)
+    }
 
     private fun renderCallBar(state: VoiceCall.State) {
         if (state.active) {
@@ -524,6 +590,8 @@ class InstanceWebViewActivity : AppCompatActivity() {
         // leave it running -- this used to stopService here and drop the call.
         callWatcher?.stop()
         callWatcher = null
+        stopVoiceStateResync()
+        resyncHandler.removeCallbacksAndMessages(null)
         stopScreenShare()
         CallDiagnostics.record(this, "instance closed")
         ScreenFrameSink.sender = null
@@ -541,5 +609,8 @@ class InstanceWebViewActivity : AppCompatActivity() {
         private const val BACKGROUND_COLOR = 0xFF1A1B1EL.toInt()
         private const val SCREEN_HEIGHT = 720
         private const val SCREEN_FPS = 30
+
+        /** How often the live call state is re-sent while the instance is on screen. */
+        private const val VOICE_STATE_RESYNC_MS = 2000L
     }
 }

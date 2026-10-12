@@ -66,6 +66,54 @@ Consequences the native side must honor:
   pre-negotiated sendonly video line + `PATCH { sharing: true }`. Watching is
   opt-in via `PATCH { watching: [ids] }`; the relay forwards nothing otherwise.
 
+## Host call state to the client (v1)
+
+While the shell runs voice natively, the client's sidebar cannot see the call
+from the server alone (the client is kept out of voice; see `UPSTREAM_CHANGES`
+§6). The shell therefore pushes the call state to the client over the same
+`HarmonyVoiceHost` bridge the client uses to start a call. The client assigns
+`window.HarmonyVoiceHost.onState = (message) => {}` when it starts, and also
+accepts the payload as a `harmony:voice-state` window event; the shell calls the
+callback, or dispatches the event when there is no callback. The client accepts
+the message as an object or a JSON string.
+
+```json
+{
+  "version": 1,
+  "type": "state",
+  "channelId": "<voice channel id>",
+  "channelName": "<display name or null>",
+  "self": { "muted": false, "deafened": false, "sharing": false },
+  "members": [
+    { "id": "<user id>", "name": "<display name>", "muted": false,
+      "sharing": false, "speaking": false }
+  ]
+}
+```
+
+`members` is the full roster, this member included (it mirrors
+`VOICE_STATE_UPDATE`); `speaking` is the shell's own reading of the inbound RTP
+`audioLevel`. `deafened` is only on `self`. A terminal
+`{ "version": 1, "type": "left" }` clears the row when the call ends.
+
+The client drops anything that is not `version: 1` with a known `type`, or a
+`state` without a `channelId`; unknown fields are ignored, so the payload can
+grow without breaking the client. The shell builds the message in
+`VoiceHostEmitter` from `VoiceCall` (`channelId` is carried on
+`VoiceCall.State`).
+
+The injected bridges are scoped to the instance's own origin, not `"*"`. Both
+`WebViewCompat.addWebMessageListener` (`HarmonyVoiceHost`, `HarmonyScreen`) and
+the shim's `addDocumentStartJavaScript` are registered with the one allowed-origin
+rule built from the instance url (`WebViewOrigin`): the rule is
+`scheme://host[:port]` with the scheme's default port left off, and a url that is
+not an http(s) origin registers no bridge at all (fail closed). So a frame the
+WebView hosts under any other origin cannot reach the bridge and ask the shell to
+join a call or leave one. `VoiceHostEmitter` also escapes U+2028 / U+2029 in the
+string literal it injects (a name containing one is not a `JSON.parse` syntax
+error on a pre-ES2019 WebView) and ignores an `evaluateJavascript` that races
+`onDestroy`.
+
 ## Architecture
 
 ```
@@ -112,16 +160,23 @@ InstanceWebViewActivity ── hosts ──> WebView (chat client, unchanged)
    and `micEnergy` rising — real capture. The foreground service is what keeps the
    microphone unmuted, and the client's voice is switched off so the two do not
    fight for it.
-3. **Call UI — started.** Calls start from the client's own channel list: the
+3. **Call UI — done.** Calls start from the client's own channel list: the
    shell injects a `HarmonyVoiceHost` bridge and the client hands a voice-channel
    tap to it (`UPSTREAM_CHANGES` §7), so there is no separate app button (verified
    over the DevTools protocol by clicking the sidebar row). A call shows a native
    control bar along the top of the instance (`VoiceCallBar`) — channel, state,
    mute, deafen, share, leave — and the fuller in-call screen (`CallActivity`, with
-   the roster) opens from the call notification. Still to do: screen sharing (the
-   Share button is a placeholder until milestone 4), speaking indicators, and
-   pushing call state back so the sidebar shows the connected/muted indicator and
-   can leave from the row.
+   the roster) opens from the call notification.
+
+   The bridge is two-way: the shell also pushes the native call state back with
+   `VoiceHostEmitter`, on the v1 contract below, so the client's own sidebar row
+   reads as connected, shows its muted/deafened state and the roster, and ends the
+   call when the connected row is tapped. Because the client re-assigns its
+   handler asynchronously after it boots and there is no client-to-shell sync
+   request in v1, the shell re-sends the current state on every change, when the
+   page (re)loads, when the instance is resumed, and on a short interval while a
+   call is live — so a call that is already running when the client reloads still
+   shows, and a call that ends leaves no stale row.
 4. **Screen share — implemented; needs a two-party check.** Sharing attaches a
    `ScreenCapturerAndroid` capture to this member's own send-only video line
    (`replaceTrack`) and sets `PATCH { sharing: true }`; watching opts in with

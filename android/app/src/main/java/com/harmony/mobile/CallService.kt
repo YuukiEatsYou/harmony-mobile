@@ -107,6 +107,7 @@ class CallService : Service() {
                 active = true,
                 connecting = true,
                 connected = false,
+                channelId = channelId,
                 channelName = channelName,
                 muted = false,
                 deafened = false,
