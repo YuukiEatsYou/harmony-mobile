@@ -11,7 +11,7 @@ import {
 import { probeInstance } from './lib/meta';
 import { openInstance } from './lib/instance';
 import { routeDeepLink } from './lib/deeplink';
-import { initNotifications, registerPushEndpoint } from './lib/notifications';
+import { initNotifications, registerPushEndpoint, unregisterPushEndpoint } from './lib/notifications';
 import { closeDiagnostics, openDiagnostics } from './ui/diagnostics';
 
 const root = document.getElementById('app');
@@ -46,6 +46,9 @@ function render(): void {
 }
 
 async function remove(server: Server): Promise<void> {
+  // Remove the install's push endpoint from the instance first, while its
+  // cookies still exist — the one sign-out the shell can see (F1).
+  void unregisterPushEndpoint([server]);
   servers = await removeServer(server.id);
   render();
 }
@@ -60,6 +63,13 @@ async function boot(): Promise<void> {
 
   void CapacitorApp.addListener('appUrlOpen', (event) => {
     void routeDeepLink(event.url, servers);
+  });
+
+  // A session can appear after boot (signing in inside an instance webview), and
+  // the provider's endpoint can arrive late, so re-register on every resume; the
+  // already-registered origins are skipped, and a 401 is retried next time (F3).
+  void CapacitorApp.addListener('resume', () => {
+    void registerPushEndpoint(servers);
   });
 
   void CapacitorApp.addListener('backButton', ({ canGoBack }) => {

@@ -9,6 +9,7 @@ import {
   sendPushDevice,
   unregisterEndpoint,
   unregisterPushDevice,
+  unregisteredServers,
   PUSH_DEVICES_PATH,
 } from '../src/lib/push.ts';
 import { findServer } from '../src/lib/server-model.ts';
@@ -193,4 +194,20 @@ test('a failure on one instance does not stop the others', async () => {
     { origin: 'https://b.example.com', ok: false, status: 401 },
     { origin: 'https://c.example.com', ok: false },
   ]);
+});
+
+test('unregisteredServers skips origins already registered', () => {
+  const servers = [
+    server({ id: 'a', origin: 'https://a.example.com' }),
+    server({ id: 'b', origin: 'https://b.example.com' }),
+  ];
+  const pending = unregisteredServers(servers, new Set(['https://a.example.com']));
+  assert.deepEqual(
+    pending.map((entry) => entry.origin),
+    ['https://b.example.com'],
+  );
+  // Nothing left to do once every origin is registered.
+  assert.deepEqual(unregisteredServers(servers, new Set(['https://a.example.com', 'https://b.example.com'])), []);
+  // An empty registry means every instance is pending.
+  assert.equal(unregisteredServers(servers, new Set()).length, 2);
 });

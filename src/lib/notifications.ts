@@ -12,6 +12,8 @@ import {
   coercePushPayload,
   pushTargetKey,
   registerEndpoint,
+  unregisterEndpoint,
+  unregisteredServers,
   type PushPayload,
   type PushDeviceSender,
 } from './push';
@@ -20,7 +22,7 @@ export type { PushPayload } from './push';
 
 /**
  * The native provider bridge, implemented in Kotlin (`HarmonyPushPlugin`). The
- * provider is UnifiedPush/ntfy (docs/PUSH.md §2): a sideloaded APK has no Play
+ * provider is UnifiedPush (docs/PUSH.md §2): a sideloaded APK has no Play
  * services, so the install takes whatever distributor the user runs. The bridge
  * is deliberately small so the JS <-> Kotlin contract is explicit:
  *
@@ -32,6 +34,8 @@ export type { PushPayload } from './push';
  *   buffered natively so a cold start is not lost before the shell boots. The
  *   event is only a signal; the payload is always read from `takePendingTap`,
  *   so a tap is routed exactly once.
+ * - the `pushEndpoint` event — the provider produced or rotated this install's
+ *   endpoint (it arrives asynchronously, after boot), so the shell re-registers.
  */
 interface HarmonyPushPlugin {
   getEndpoint(): Promise<{ endpoint: string | null }>;
@@ -43,7 +47,7 @@ interface HarmonyPushPlugin {
   }): Promise<{ ok: boolean; status?: number }>;
   takePendingTap(): Promise<{ payload: string | null }>;
   addListener(
-    eventName: 'pushTap',
+    eventName: 'pushTap' | 'pushEndpoint',
     listenerFunc: (data: unknown) => void,
   ): Promise<PluginListenerHandle>;
 }
@@ -101,21 +105,53 @@ export async function routePushPayload(
 }
 
 /**
- * Registers this install's endpoint with every stored instance. Called once at
- * boot and again for every instance added later; a provider that has no
- * distributor yet yields no endpoint and the call is a no-op (docs/PUSH.md §2).
+ * Origins already registered for the current endpoint. Registration is
+ * idempotent server-side, but this keeps a resume (F3) or a re-add from
+ * re-issuing a request per instance every time.
+ */
+const registered = new Set<string>();
+
+/** The endpoint `registered` was built for; a rotation resets it. */
+let registeredEndpoint: string | null = null;
+
+/**
+ * Registers this install's endpoint with every stored instance (docs/PUSH.md
+ * §3). Called at boot, on app resume (an instance signed into after boot has a
+ * session then), when an instance is added, and when the endpoint rotates. A
+ * provider with no distributor yet yields no endpoint and the call is a no-op.
  */
 export async function registerPushEndpoint(servers: Server[]): Promise<void> {
   const endpoint = await currentEndpoint();
   if (!endpoint) return;
-  const results = await registerEndpoint(endpoint, servers, nativeSender);
-  for (const result of results) {
-    if (!result.ok) {
-      // A 401 means the user is not signed in on that instance yet, which is
-      // expected; anything else is worth a line in the call diagnostics log.
-      console.warn(`push: could not register with ${result.origin} (${result.status ?? 'no session'})`);
-    }
+
+  if (endpoint !== registeredEndpoint) {
+    // First endpoint, or a rotation: everything must be re-registered.
+    registered.clear();
+    registeredEndpoint = endpoint;
   }
+  const targets = unregisteredServers(servers, registered);
+  if (targets.length === 0) return;
+
+  const results = await registerEndpoint(endpoint, targets, nativeSender);
+  for (const result of results) {
+    if (result.ok) registered.add(result.origin);
+    // A 401 means the user is not signed in on that instance yet, which is
+    // expected; a later resume retries it. Anything else is logged.
+    else console.warn(`push: could not register with ${result.origin} (${result.status ?? 'no session'})`);
+  }
+}
+
+/**
+ * Removes this install's endpoint from every given instance (docs/PUSH.md §3).
+ * Called when the user removes an instance from the shell — the one sign-out
+ * the shell *can* observe — while the origin's cookies still exist (F1).
+ */
+export async function unregisterPushEndpoint(servers: Server[]): Promise<void> {
+  if (servers.length === 0) return;
+  const endpoint = await currentEndpoint();
+  if (!endpoint) return;
+  await unregisterEndpoint(endpoint, servers, nativeSender);
+  for (const server of servers) registered.delete(server.origin);
 }
 
 /**
@@ -148,10 +184,19 @@ export async function initNotifications(getServers: () => Server[]): Promise<voi
     void drainPendingPushTap(getServers);
   });
 
+  // The provider hands us the endpoint asynchronously (it can arrive long after
+  // boot), so registration is driven by the signal, not only by boot.
+  await HarmonyPush.addListener('pushEndpoint', () => {
+    void registerPushEndpoint(getServers());
+  });
+
   // A tap that cold-started the app, buffered natively until the shell booted.
   // Drained after the listener is in place, so a live tap cannot be lost in the
   // gap.
   await drainPendingPushTap(getServers);
 
-  await registerPushEndpoint(getServers());
+  // Fire-and-forget: registering one instance at a time over the native bridge
+  // must not delay boot or the deep-link listener (F2). The endpoint signal and
+  // the resume handler pick up anything not registered here.
+  void registerPushEndpoint(getServers());
 }

@@ -141,6 +141,19 @@ export function registerEndpoint(
   return sendPushDevice(registerPushDevice(endpoint), servers, send);
 }
 
+/**
+ * The instances still needing registration: those whose origin is not already
+ * registered. Registration is idempotent server-side, but skipping a repeat
+ * keeps a resume (F3) or a re-add from re-issuing a request per instance every
+ * time.
+ */
+export function unregisteredServers(
+  servers: Server[],
+  registered: ReadonlySet<string>,
+): Server[] {
+  return servers.filter((server) => !registered.has(server.origin));
+}
+
 /** Removes `endpoint` from every stored instance (sign-out or rotation). */
 export function unregisterEndpoint(
   endpoint: string,
