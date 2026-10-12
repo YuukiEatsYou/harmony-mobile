@@ -217,8 +217,18 @@ git push origin v0.2.0
 
 The tag is the source of truth for the version: `versionName` becomes `0.2.0`, and
 `versionCode` is derived from it as `major*10000 + minor*100 + patch`, so keep
-tags plain `vX.Y.Z`. The signed APK lands on the Releases page as
-`harmony-mobile-<version>.apk`.
+tags plain `vX.Y.Z`. The release build also refuses a tag that does not match the
+version committed in `package.json` and `package-lock.json`, so bump them in the
+commit you tag:
+
+```sh
+npm version 0.2.0 --no-git-tag-version
+git commit -am 'Release 0.2.0'
+git tag v0.2.0
+git push origin main v0.2.0
+```
+
+The signed APK lands on the Releases page as `harmony-mobile-<version>.apk`.
 
 A release APK is signed with your key rather than the debug key, so it will not
 install over a debug build -- uninstall the debug one first. Locally,
