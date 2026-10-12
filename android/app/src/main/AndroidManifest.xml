@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
+        android:name=".HarmonyApplication"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
@@ -69,6 +72,16 @@
             android:foregroundServiceType="microphone|mediaProjection"
         />
 
+        <!-- UnifiedPush: the connector forwards deliveries and endpoint updates
+             here (docs/PUSH.md §2/§4); this service hands them to the shell. -->
+        <service
+            android:name=".HarmonyPushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -77,22 +90,9 @@
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Debug only: lets adb drive the native voice checks without the UI. -->
-        <receiver
-            android:name=".VoiceDebugReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="com.harmony.mobile.VOICE_PROBE" />
-                <action android:name="com.harmony.mobile.VOICE_JOIN" />
-                <action android:name="com.harmony.mobile.VOICE_LEAVE" />
-                <action android:name="com.harmony.mobile.VOICE_STOP" />
-                <action android:name="com.harmony.mobile.VOICE_FORGET" />
-                <action android:name="com.harmony.mobile.VOICE_OPEN" />
-                <action android:name="com.harmony.mobile.VOICE_INSTANCE" />
-                <action android:name="com.harmony.mobile.VOICE_MUTE" />
-                <action android:name="com.harmony.mobile.VOICE_DEAFEN" />
-            </intent-filter>
-        </receiver>
+        <!-- The debug receivers (VoiceDebugReceiver, PushDebugReceiver) live in
+             src/debug/AndroidManifest.xml, so a release build does not register
+             them at all (F3). -->
     </application>
 
     <!-- Permissions -->

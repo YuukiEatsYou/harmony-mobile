@@ -77,6 +77,9 @@ dependencies {
     // gateway directly.
     implementation "io.github.webrtc-sdk:android:144.7559.15"
     implementation "com.squareup.okhttp3:okhttp:4.12.0"
+    // UnifiedPush: the provider-agnostic push transport (docs/PUSH.md §2), for a
+    // sideloaded APK with no Play services. The distributor stays a user choice.
+    implementation "org.unifiedpush.android:connector:3.3.5"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

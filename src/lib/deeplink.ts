@@ -1,5 +1,6 @@
 import type { Server } from './servers';
 import { openInstance } from './instance';
+import { findServer } from './server-model';
 import { parseDeepLink } from './urls';
 
 export type { ParsedDeepLink } from './urls';
@@ -9,11 +10,7 @@ export async function routeDeepLink(raw: string, servers: Server[]): Promise<boo
   const link = parseDeepLink(raw);
   if (!link) return false;
 
-  const server = servers.find(
-    (candidate) =>
-      (link.instanceId !== null && candidate.instanceId === link.instanceId) ||
-      (link.origin !== null && candidate.origin === link.origin),
-  );
+  const server = findServer(servers, { instanceId: link.instanceId, origin: link.origin });
   if (!server) return false;
 
   await openInstance(server.origin, {

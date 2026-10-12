@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Debug-only manifest, merged into debug builds only. The two debug receivers
+  let adb drive the native voice and push paths without the UI
+  (VoiceDebugReceiver, PushDebugReceiver). They are declared here rather than in
+  the main manifest so a release build does not register them at all (F3); the
+  in-code FLAG_DEBUGGABLE guard in each receiver is still kept as defense in
+  depth. The CI publishes a debug APK, where these stay live.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug only: lets adb drive the native voice checks without the UI. -->
+        <receiver
+            android:name=".VoiceDebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.harmony.mobile.VOICE_PROBE" />
+                <action android:name="com.harmony.mobile.VOICE_JOIN" />
+                <action android:name="com.harmony.mobile.VOICE_LEAVE" />
+                <action android:name="com.harmony.mobile.VOICE_STOP" />
+                <action android:name="com.harmony.mobile.VOICE_FORGET" />
+                <action android:name="com.harmony.mobile.VOICE_OPEN" />
+                <action android:name="com.harmony.mobile.VOICE_INSTANCE" />
+                <action android:name="com.harmony.mobile.VOICE_MUTE" />
+                <action android:name="com.harmony.mobile.VOICE_DEAFEN" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Debug only: delivers a push payload without a provider, so the tap
+             path can be exercised on a device. PUSH_SHOW raises the real tray
+             notification. -->
+        <receiver
+            android:name=".PushDebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.harmony.mobile.PUSH_TAP" />
+                <action android:name="com.harmony.mobile.PUSH_SHOW" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

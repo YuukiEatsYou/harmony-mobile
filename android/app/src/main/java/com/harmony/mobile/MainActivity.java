@@ -17,12 +17,40 @@ public class MainActivity extends BridgeActivity {
         // Exposes the on-device call diagnostics to the shell, so a device with
         // no adb can still report why a background call failed.
         registerPlugin(HarmonyDiagnosticsPlugin.class);
+        // The push provider seam: endpoint, device registration, and tap
+        // routing (docs/PUSH.md).
+        registerPlugin(HarmonyPushPlugin.class);
         super.onCreate(savedInstanceState);
+
+        // A notification tap that cold-started us: buffer it for the shell to
+        // route once it has booted (docs/PUSH.md §5).
+        PushStore.INSTANCE.consumeIntent(this, getIntent());
+
+        // Subscribe to the UnifiedPush distributor so an endpoint arrives for
+        // registration (docs/PUSH.md §2). A no-op with no distributor installed.
+        PushProvider.INSTANCE.ensureRegistered(this);
+
+        // The notification permission is NOT asked here: at launch the shell is
+        // only the server selector, with no reason yet to want notifications. It
+        // is asked once, in context, on the first instance open (YUC-21 §3) —
+        // see InstanceWebViewActivity.
+    }
+
+    @Override
+    public void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // A tap that arrived while we were already alive (singleTask).
+        setIntent(intent);
+        PushStore.INSTANCE.consumeIntent(this, intent);
     }
 
     @Override
     public void onResume() {
         super.onResume();
+
+        // Catch a tap extra that was already on the intent (e.g. delivered while
+        // the process was starting); consumeIntent removes it so this runs once.
+        PushStore.INSTANCE.consumeIntent(this, getIntent());
 
         // A `harmony://` link launches us to open a specific instance, which the
         // shell's appUrlOpen handler does; never pre-empt it with the last one.

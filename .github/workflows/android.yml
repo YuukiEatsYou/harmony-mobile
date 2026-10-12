@@ -49,6 +49,28 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - run: npm ci
+
+      # The tag is the version source of truth, but the repository has to agree
+      # with it before a release goes out: a plain vMAJOR.MINOR.PATCH, matching
+      # the version committed in package.json and package-lock.json. This keeps
+      # a release from going out under a name the repository does not carry.
+      - name: Check the tag matches the committed version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          ref="$GITHUB_REF_NAME"
+          if [[ ! "$ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release tags must be plain vMAJOR.MINOR.PATCH (got $ref)."
+            exit 1
+          fi
+          want="${ref#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          lock="$(node -p "require('./package-lock.json').version")"
+          if [ "$pkg" != "$want" ] || [ "$lock" != "$want" ]; then
+            echo "::error::$ref does not match package.json ($pkg) / package-lock.json ($lock)."
+            exit 1
+          fi
+
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

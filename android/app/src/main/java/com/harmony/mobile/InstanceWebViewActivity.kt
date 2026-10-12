@@ -131,6 +131,11 @@ class InstanceWebViewActivity : AppCompatActivity() {
             finish()
             return
         }
+        // Ask for notifications once, here, on the first instance open (YUC-21
+        // §3): the first moment the person has a server and notifications matter.
+        // Not at launch, when the shell is only an empty selector and a cold
+        // system dialog has no information scent.
+        requestNotificationsOnce()
         // The shell resumes this instance if the app is restarted or the task is
         // brought back, so it does not drop the person at the server selector.
         InstanceSession.remember(this, url)
@@ -326,6 +331,26 @@ class InstanceWebViewActivity : AppCompatActivity() {
             )
             "leave" -> NativeVoice.leave(this)
         }
+    }
+
+    /**
+     * Asks for the notification permission once, on the first instance open
+     * (YUC-21 §3). Android 13+ can show the dialog only twice before the app is
+     * auto-denied, so the one good ask is spent at a moment the person has a
+     * reason to want notifications; a denial is not re-asked (the OS settings
+     * toggle is the recovery path).
+     */
+    private fun requestNotificationsOnce() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        if (!NotificationPermission.shouldAsk(this)) return
+        // Mark before the dialog, so a denial is not asked again.
+        NotificationPermission.markAsked(this)
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     /**

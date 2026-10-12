@@ -52,3 +52,24 @@ test('parseDeepLink rejects other schemes and unreadable input', () => {
   assert.equal(parseDeepLink('https://chat.example.com'), null);
   assert.equal(parseDeepLink('not a url'), null);
 });
+
+test('parseDeepLink reads a channel with no message', () => {
+  assert.deepEqual(parseDeepLink('harmony://open?channel=c1'), {
+    origin: null,
+    instanceId: null,
+    channelId: 'c1',
+    messageId: null,
+  });
+});
+
+test('buildInstanceUrl normalizes a trailing slash on the origin', () => {
+  assert.equal(buildInstanceUrl('https://chat.example.com/'), 'https://chat.example.com/');
+});
+
+test('buildInstanceUrl round-trips ids with special characters', () => {
+  const url = new URL(
+    buildInstanceUrl('https://chat.example.com', { channelId: 'c 1/2', messageId: 'm&2' }),
+  );
+  assert.equal(url.searchParams.get('channel'), 'c 1/2');
+  assert.equal(url.searchParams.get('message'), 'm&2');
+});

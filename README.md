@@ -14,7 +14,9 @@ and works the same way.
 This repository does not vendor or reimplement Harmony. It is a small **shell**:
 
 - A list of the instances you have added. The **+** flow verifies an address
-  against `GET /api/v1/meta` and records the instance's name and icon.
+  against `GET /api/v1/meta` and records the instance's name and icon. The probe
+  has a timeout and says why it failed — an unreachable host, a wrong address, a
+  redirect off the instance, a non-JSON body — rather than one generic error.
 - Tapping a server opens **that instance's own web client** from its own origin,
   full-screen, in a webview this app owns (`InstanceWebViewActivity`). Storage is
   per-origin, so one instance's cookies never leak into another's — and owning the
@@ -37,7 +39,15 @@ Capture runs behind a foreground service (Android requires it for screen capture
 with a Stop action in the notification. The microphone for voice chat is
 requested separately, on first use.
 
-Notifications are designed for but not built yet — see `UPSTREAM_CHANGES.md`.
+Notifications: the app subscribes to a UnifiedPush distributor for one endpoint
+per install, registers that endpoint with every instance, and routes a
+notification tap to the right instance and channel (`src/lib/push.ts`,
+`src/lib/notifications.ts`, `docs/PUSH.md`). The tray text leads with the sender,
+uses a dedicated monochrome icon, and is suppressed while the app is foreground;
+the notification permission is asked once, on the first instance open. With no
+distributor installed the path stays dormant. The push endpoint is an
+unauthenticated capability and is kept out of Android backup and device transfer
+(`docs/PUSH.md` §2). The remaining check is a real tap on a device.
 
 ### Calls in the background
 
@@ -100,7 +110,7 @@ emulator.
 
 ```sh
 npm run typecheck   # tsc
-npm run test        # plain-Node tests for the address and URL logic
+npm run test        # plain-Node tests for the address, URL and server-list logic
 npm run check       # typecheck + build
 ```
 
@@ -156,8 +166,11 @@ physical device, use the machine's LAN address, e.g. `192.168.1.50:8787`.
 - `src/` — the shell (plain TypeScript, no framework).
   - `src/lib/meta.ts` — address parsing and the `meta` probe.
   - `src/lib/servers.ts` — the stored instance list.
+  - `src/lib/server-model.ts` — the pure merge / drop / select logic behind it.
   - `src/lib/instance.ts` — opening an instance in the in-app webview.
   - `src/lib/urls.ts` — pure URL and `harmony://` deep-link helpers.
+  - `src/lib/push.ts` — the pure push contract: the payload shape, the routing
+    key, and the device-registration request and fan-out.
   - `src/lib/notifications.ts`, `src/lib/deeplink.ts` — the seams for
     notifications and deep links.
 - `android/` — the Capacitor Android project. Screen sharing lives here:
@@ -170,6 +183,8 @@ physical device, use the machine's LAN address, e.g. `192.168.1.50:8787`.
   outlives the instance webview — is `NativeVoice.kt` (`NativeVoiceSession.kt`,
   `VoiceEngine.kt`, `VoiceSignaling.kt`, `VoiceApi.kt`, `SessionCookie.kt`), with
   the call UI in `CallActivity.kt` and `VoiceCall.kt`; see `docs/native-voice.md`.
+- `docs/` — `native-voice.md` (the native call stack) and `PUSH.md` (the
+  notification contract the shell is written against).
 - `scripts/` — plain-Node tests.
 - `harmony/` — a local Harmony checkout to test against (git-ignored).
 
@@ -212,8 +227,18 @@ git push origin v0.2.0
 
 The tag is the source of truth for the version: `versionName` becomes `0.2.0`, and
 `versionCode` is derived from it as `major*10000 + minor*100 + patch`, so keep
-tags plain `vX.Y.Z`. The signed APK lands on the Releases page as
-`harmony-mobile-<version>.apk`.
+tags plain `vX.Y.Z`. The release build also refuses a tag that does not match the
+version committed in `package.json` and `package-lock.json`, so bump them in the
+commit you tag:
+
+```sh
+npm version 0.2.0 --no-git-tag-version
+git commit -am 'Release 0.2.0'
+git tag v0.2.0
+git push origin main v0.2.0
+```
+
+The signed APK lands on the Releases page as `harmony-mobile-<version>.apk`.
 
 A release APK is signed with your key rather than the debug key, so it will not
 install over a debug build -- uninstall the debug one first. Locally,
