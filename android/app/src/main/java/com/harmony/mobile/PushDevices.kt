@@ -24,13 +24,22 @@ object PushDevices {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        // F2: never follow a redirect off the instance. This client sets a
+        // manual `Cookie` header and installs no CookieJar, so OkHttp would copy
+        // the session cookie to the redirect host (and re-send the body on
+        // 307/308) -- an SSRF/capability disclosure the web path already
+        // rejects (`meta.ts`). A 3xx is returned as-is and treated as a
+        // per-instance failure below; it is never re-issued to the target.
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
     private val jsonType = "application/json; charset=utf-8".toMediaType()
 
     /**
      * Sends one request to `origin`. Returns `ok=false, status=0` when there is
      * no session at all, and the real status otherwise; only an I/O failure
-     * throws, which the caller reports as a per-instance failure.
+     * throws, which the caller reports as a per-instance failure. A 3xx is not
+     * followed (F2) -- it comes back as an unsuccessful result with its status.
      */
     fun send(origin: String, method: String, path: String, body: String?): Result {
         val cookie = SessionCookie.headerFor(origin) ?: return Result(false, 0)
