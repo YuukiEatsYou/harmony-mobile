@@ -1,15 +1,22 @@
 name: Build
 
-# Runs on pull requests and pushes to main, on a manual click in the Actions
-# tab, and on every v* tag. A tag also publishes a GitHub Release with a signed
-# release APK attached. Every release is a PREVIEW build: it is published as a
-# prerelease and its title and body say so, because this client is not stable
-# and the APKs exist for upstream to verify functionality. Only Android is
-# built; this client targets Android alone for now.
+# This workflow lives on the company fork (hrmnychat-hue/harmony-mobile) and runs
+# there, not just in the canonical repository. Every push to any branch builds a
+# **validation** debug APK and uploads it as a run artifact, so the upstream
+# maintainer can download a ready-made build from our repository and test the
+# pull request before merging it. Pushing a v* tag additionally builds a signed
+# release APK.
+#
+# Every build this workflow publishes is a PREVIEW: the run summary is labeled
+# and the release job publishes a GitHub prerelease titled and described as a
+# preview build, because this client is not stable. Only Android is built; this
+# client targets Android alone for now.
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    # Every branch, not only main: a pull-request branch pushed to the fork gets
+    # its own validation build there, which is what upstream downloads.
+    branches: ['**']
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -56,18 +63,33 @@ jobs:
       - run: npm run build
       - run: npx cap sync android
 
-      # A debug APK is signed with the debug key, so it always installs as-is.
-      # Every run produces one so there is something to sideload even without a
-      # release tag.
-      - name: Build debug APK
+      # The validation build. A debug APK is signed with the debug key, so it
+      # installs as-is on any device or emulator; upstream downloads this from
+      # the fork's Actions run and needs no signing secrets to reproduce it.
+      - name: Build validation APK
         run: ./gradlew assembleDebug
         working-directory: android
 
-      - uses: actions/upload-artifact@v7
+      - name: Upload validation APK
+        uses: actions/upload-artifact@v7
         with:
-          name: harmony-mobile-debug-apk
+          name: harmony-mobile-preview-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # Make the preview status unmissable in the run UI, next to the artifact.
+      - name: Label the run as a preview build
+        if: always()
+        run: |
+          {
+            echo "## :warning: Preview build - not a stable release"
+            echo
+            echo "This run built a Harmony Mobile **preview** APK for validation."
+            echo
+            echo "Download the \`harmony-mobile-preview-apk\` artifact attached to"
+            echo "this run, unzip it, and install \`app-debug.apk\` on an Android"
+            echo "device or emulator."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # --- Signed release build, on a v* tag only ---------------------------
 
@@ -138,3 +160,40 @@ jobs:
           prerelease: true
           files: apk/*.apk
           generate_release_notes: true
+
+  # A branch push (a pull-request branch on the fork) republishes a rolling
+  # preview release under the `preview/<branch>` tag, so upstream has a stable,
+  # login-free download URL for the validation build:
+  #   https://github.com/hrmnychat-hue/harmony-mobile/releases/tag/preview/<branch>
+  # The tag and release are GitHub prereleases and say "preview" everywhere.
+  preview-release:
+    name: Publish validation build
+    needs: android
+    # Branch pushes only. A v* tag goes through the signed release job above, and
+    # a pull_request run has a read-only token and belongs to the base repository.
+    if: github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: harmony-mobile-preview-apk
+          path: apk
+
+      - name: Name the validation APK
+        run: mv apk/app-debug.apk "apk/harmony-mobile-preview-${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::7}.apk"
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: 'preview/${{ github.ref_name }}'
+          target_commitish: ${{ github.sha }}
+          name: 'Preview build: ${{ github.ref_name }}'
+          body: |
+            > **Preview build — not a stable release.**
+            >
+            > A Harmony Mobile preview APK built from `${{ github.ref_name }}` at
+            > commit `${{ github.sha }}`. Download the APK below and install it on
+            > an Android device or emulator to validate the pull request. This is
+            > not a stable release.
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: apk/*.apk
